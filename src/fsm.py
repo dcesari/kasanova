@@ -52,7 +52,8 @@ class Switch:
         if len(inputs) > 0: self.state[1] = 0 # automatic
         else: self.state[1] = 1 # manual
         self.state[2] = 0 # output by timer off
-        self.state[3] = 0 # output off
+        self.state[3] = self.defaultstate # output off
+        self.setinput() # call autotrigchange?
 
     def connect(self, unitlist):
         self.ins = []
