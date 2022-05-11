@@ -22,7 +22,7 @@ class DigitalOut(KnovaTool):
         self.pin = conf["pin"]
         self.defaultstate = conf.get(conf["defaultstate"], 0)
 
-        self.state = bytearr(0)
+        self.state = bytearr(1)
         self.state[0] = self.defaultstate
 
     def connect(self, unitlist):
@@ -81,7 +81,7 @@ class Switch:
                 self.state[0] = self.state[0] or inp.state[0]
 
     def setoutput(self):
-        self.out(self.state[3])
+        self.output.setoutput(self.state[3])
                 
     def setman(self, req, qs):
         self.state[1] = 1
