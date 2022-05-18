@@ -12,7 +12,62 @@ states = [
 
 class KnovaTool:
     def getstate(self, req, qs):
+        state = {}
+        i = 0
+        for n in self.state:
+            state[i] = n
+            i = i + 1
         return state
+
+class DigitalIn(KnovaTool):
+    def __init__(self, conf):
+        self.name = conf["name"]
+        self.invert = conf.get("invert", False)
+        self.web = conf.get("web", False)
+        self.pin = conf["pin"]
+        self.defaultstate = conf.get("defaultstate", 0)
+        self.initdelay = conf.get("initdelay", 0)
+        self.remainon = conf.get("remainon", 0)
+
+        self.state = bytearr(0)
+        self.state[0] = self.defaultstate
+
+    def connect(self, unitlist):
+        self.outs = []
+        for l in unitlist:
+            if isinstance(unitlist[l], Switch):
+                self.outs.append(unitlist[l])
+
+        if self.web:
+            unitlist["web"].register((self.name,"get"), self.getstate)
+            unitlist["web"].register((self.name,"set","on"), self.on)
+            unitlist["web"].register((self.name,"set","off"), self.off)
+            unitlist["web"].register((self.name,"set","pulseon"), self.pulseon)
+            unitlist["web"].register((self.name,"set","pulseoff"), self.pulseoff)
+        # machine.irq(self.pin)
+
+    def signalchange(self):
+        for trig in self.outs:
+            trig.autotrigchange()
+
+    def on(self, req, qs):
+        self.state[0] = 1 - self.invert
+        self.signalchange()
+
+    def off(self, req, qs):
+        self.state[0] = self.invert
+        self.signalchange()
+
+    def pulseon(self, req, qs):
+        self.state[0] = 1 - self.invert
+        # signalchange
+        # schedule off
+
+    def pulseoff(self, req, qs):
+        self.state[0] = self.invert
+        # signalchange
+        # schedule on
+
 
 class DigitalOut(KnovaTool):
     def __init__(self, conf):
