@@ -74,6 +74,7 @@ class AuthHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
             self.wfile.write('not authenticated')
         return False
 
+
     def do_apiget(self):
         path = self.path.split("/")
         if len(path) >= 3:
@@ -87,26 +88,32 @@ class AuthHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
         else:
             self.do_apiresp(404, "text/plain", "not found")
                 
+
     def do_apipost(self):
         path = self.path.split("/")
         if len(path) >= 3:
-            form = cgi.FieldStorage(
-                fp=self.rfile,
-                headers=self.headers,
-                environ={'REQUEST_METHOD':'POST',
-                         'CONTENT_TYPE':self.headers['Content-Type']}
-            )
+            cl = int(self.headers.get("content-length", 65536))
+            cl = min(cl, 65536)
+            try:
+                req = json.loads(self.rfile.read(cl))
+                form = req.get("record", {})
+            except:
+                form = {}
             if path[2] == "download":
-                dest = form.getfirst("dest")
-                url = form.getfirst("url")
+                dest = form.get("dldir", "")
+                url = form.get("dlurl", "")
                 if os.path.isdir(dest) and len(url) > 0:
-                    threading.Thread(group=None, target=do_download, args=(dest,url))
-                    self.do_apiresp(200, "text/plain", "Download started")
+#                    threading.Thread(group=None, target=do_download, args=(dest,url))
+                    self.do_apiresp(200, "application/json",
+                                    json.dumps({"status": "success"}))
+
                 else:
-                    self.do_apiresp(400, "text/plain", "Bad request")
-            
-            if path[2] == "settimer":
+                    self.do_apiresp(400, "application/json",
+                                    json.dumps({"status": "error",
+                                                "message": "Bad request"}))
+            elif path[2] == "settimer":
                 pass
+
 
     def do_apiresp(self, status, contentype, content=None):
         self.send_response(status)

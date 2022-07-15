@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>IPTV utilities</title>
+    <script src="iptvutils/jquery.min.js"></script>
+    <script type="text/javascript" src="iptvutils/w2ui.min.js"></script>
+    <link rel="stylesheet" type="text/css" href="iptvutils/w2ui.min.css" />
+</head>
+<body>
+
+<div id="tabs" style="width: 100%;"></div>
+<!-- <div id="selected-tab" style="padding: 10px 0px">tab1</div> -->
+<div id="tab1" style="display: none; padding: 10px 0px">l'abbiamo sempre fatto</div>
+<div id="tab2" style="display: none; padding: 10px 0px">lo facciamo</div>
+<div id="tab3" style="display: none; padding: 10px 0px">
+  <div id="dlform" style="width: 600px">
+  </div>
+</div>
+<div id="tab4" style="display: none; padding: 10px 0px">lo faremmo</div>
+
+<script type="text/javascript">
+
+  
+	  
+  $(function () {
+      tabs = new w2tabs({
+        name: 'tabs',
+        active: 'tab1',
+	prev: 'tab1',
+        tabs: [
+            { id: 'tab1', text: 'Timer registrazione' },
+            { id: 'tab2', text: 'Registrazione immediata' },
+            { id: 'tab3', text: 'Scarica da URL' },
+            { id: 'tab4', text: 'Guida programmi' }
+        ],
+        onClick: function (event) {
+	    query('#'+event.owner.prev).hide();
+	    query('#'+event.target).show();
+	    event.owner.prev = event.target;
+        }
+      });
+      tabs.render($('#tabs')[0]);
+      $('#tab1').show();
+
+      $('#dlform').w2form({
+          name: 'dlform',
+	  url: '/api/download', // formURL ?
+	  dataType: 'RESTFULLJSON',
+	  header: 'Scarica un file da un URL remoto sul ricevitore',
+        fields : [
+            { name: 'dlurl', type: 'text', required: true,
+	      html: {label: 'URL da scaricare'}},
+            { name: 'dldir',  type: 'text', required: true,
+	      html: {label: 'cartella di destinazione'}}
+        ],
+        actions: {
+            reset: function (target, data) {
+                this.clear();
+            },
+            save: function (target, data) {
+		console.log(this.getCleanRecord());
+                this.save();
+            }
+        }
+    });
+});
+</script>
+
+</body>
+</html>
