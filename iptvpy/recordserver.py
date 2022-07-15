@@ -1,23 +1,22 @@
 #!/usr/bin/env python2
  
+import SimpleHTTPServer
 import BaseHTTPServer
-#import CGIHTTPServer
-#import cgitb; cgitb.enable()  ## This line enables CGI error reporting
 import cgi
 import os
 import ssl
-import base64
 import json
+import tvtimer
+from rssecrets import *
 
-key = base64.b64encode('ciccio:vero')
-noauthpath = '/open/'
+filepath = '/static/'
 apipath = '/api/'
-channelist = ['rtr-planeta', 'rossiya-24']
 
 # /api
 # GET
 #     /channelist
 #     /timerlist
+#     /gettimer
 # POST
 #     /settimer
 #     /removetimer
@@ -27,8 +26,7 @@ channelist = ['rtr-planeta', 'rossiya-24']
 # timer {'date': datetime|None, 'weekday': [0,1,...]|None, 'channel': ''.
 # 'enabled': True/False, 'duration': sec}
 
-#class AuthHandler(CGIHTTPServer.CGIHTTPRequestHandler): #SimpleHTTPRequestHandler):
-class AuthHandler(BaseHTTPServer.BaseHTTPRequestHandler):
+class AuthHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
     ''' Main class to present webpages and authentication. '''
     def do_HEAD(self):
         self.send_response(200)
@@ -42,23 +40,39 @@ class AuthHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
-        global key, noauthpath
+        global apipath, filepath
         print self.path
-        # authentication zone
+        if self._checkauth():
+            if self.path.startswith(apipath):
+                self.do_apiget()
+            elif self.path.startswith(filepath):
+                SimpleHTTPServer.SimpleHTTPRequestHandler.do_GET(self)
+            else:
+                self.do_apiresp(404, "text/plain", "not found")
+
+
+    def do_POST(self):
+        global apipath, filepath
+        print self.path
+        if self._checkauth():
+            if self.path.startswith(apipath):
+                self.do_apipost()
+            else:
+                self.do_apiresp(404, "text/plain", "not found")
+
+
+    def _checkauth(self):
+        global authkey
         if self.headers.getheader('Authorization') == None:
             self.do_AUTHHEAD()
             self.wfile.write('no auth header received')
-        elif self.headers.getheader('Authorization') == 'Basic '+key:
-            if self.path.startswith(apipath):
-                self.do_apiget()
-            else:
-                self.do_apiresp(404, "text/plain", "not found")
-                # BaseHTTPServer.BaseHTTPRequestHandler.do_GET(self)
+        elif self.headers.getheader('Authorization') == 'Basic '+authkey:
+            return True
         else:
             self.do_AUTHHEAD()
             self.wfile.write(self.headers.getheader('Authorization'))
             self.wfile.write('not authenticated')
-
+        return False
 
     def do_apiget(self):
         path = self.path.split("/")
@@ -96,7 +110,6 @@ class AuthHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
     def do_apiresp(self, status, contentype, content=None):
         self.send_response(status)
-#        self.send_header("Server", "LiveProxy")
         self.send_header("Content-type", contentype)
         self.end_headers()
         if content is not None:
@@ -119,12 +132,11 @@ class AuthHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 os.chdir('documentroot')
  
 server_address = ("", 8000)
-#handler = CGIHTTPServer.CGIHTTPRequestHandler
+
 handler = AuthHandler
-#handler.cgi_directories = ["/cgi"]
 handler.have_fork = False
-handler.timer = tvTimer(".local")
+handler.timer = tvtimer.tvTimer(".local")
 
 httpd = BaseHTTPServer.HTTPServer(server_address, handler)
-httpd.socket = ssl.wrap_socket(httpd.socket, keyfile='./key.pem', certfile='./cert.pem', server_side=True)
+httpd.socket = ssl.wrap_socket(httpd.socket, keyfile='../key.pem', certfile='../cert.pem', server_side=True)
 httpd.serve_forever()
