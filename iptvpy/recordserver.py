@@ -81,10 +81,23 @@ class AuthHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
             if path[2] == "channelist":
                 self.do_apiresp(200, "application/json")
                 self.wfile.write(json.dumps(channelist))
-            if path[2] == "timerlist":
+            elif path[2] == "timerlist":
                 timerlist = self.timer.list()
                 self.do_apiresp(200, "application/json")
                 self.wfile.write(json.dumps(timerlist))
+            elif path[2] == "timer":
+                timerget = {}
+                if len(path) >= 4:
+                    timerget = self.timer.get(path[3])
+                    self.do_apiresp(200, "application/json")
+                    self.wfile.write(json.dumps(timerget),
+                                     {"status": "success", "total": 1,
+                                      "records": [timerget]
+                                      }) # improve
+                else:
+                    self.do_apiresp(400, "application/json",
+                                    json.dumps({"status": "error",
+                                                "message": "Timer not specified"}))
         else:
             self.do_apiresp(404, "text/plain", "not found")
                 
@@ -111,10 +124,39 @@ class AuthHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
                     self.do_apiresp(400, "application/json",
                                     json.dumps({"status": "error",
                                                 "message": "Bad request"}))
-            elif path[2] == "settimer":
-                pass
+            elif path[2] == "timer":
+#                if len(path) >= 4:
+                res = self.timer.add(form)
+                if res == 1: # error in timer definition
+                    self.do_apiresp(400, "application/json",
+                                    json.dumps({"status": "error",
+                                                "message": "Bad timer definition"}))
+                elif res == 2: # error in writing timer
+                    self.do_apiresp(500, "application/json",
+                                    json.dumps({"status": "error",
+                                                "message": "Could not write timer"}))
+                else:
+                    self.do_apiresp(200, "application/json",
+                                    json.dumps({"status": "success"}))
 
 
+    def do_apidel(self):
+        path = self.path.split("/")
+        if len(path) >= 3:
+            if path[2] == "timer":
+                timerdel = {}
+                if len(path) >= 4:
+                    timerdel = self.timer.remove(path[3])
+                    self.do_apiresp(200, "application/json",
+                                    json.dumps({"status": "success"}))
+                else:
+                    self.do_apiresp(400, "application/json",
+                                    json.dumps({"status": "error",
+                                                "message": "Timer not specified"}))
+        else:
+            self.do_apiresp(404, "text/plain", "not found")
+
+                    
     def do_apiresp(self, status, contentype, content=None):
         self.send_response(status)
         self.send_header("Content-type", contentype)
