@@ -3,12 +3,23 @@
 import os
 import glob
 import datetime
+import json
 
 class tvTimer:
-    sdwd = ("Sun", "Mon", "Tue", "Wed", "Thu", "Sat", "Sun")
+    def __init__(self, timerdir, cmd="/media/hdd/backup/iptv/rec.sh"):
+        self.timerdir = timerdir # os.path.join(os.environ["HOME"],"config","systemd","user")
+        self.cmd = cmd
+        self.defdurationm = 60
+        self.defdelaym = 15
+
+class tvTimerSystemd(tvTimer):
+    sdwd = ("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+    comstr = "# tvTimer: "
     timertmpl = """
 [Unit]
 Description=Delayed recording from a tv channel archive
+# do not change next line
+# tvTimer: %s
 
 [Timer]
 OnCalendar=%s
@@ -25,12 +36,6 @@ Type=oneshot
 %sExecStart=%s %s %s %d %s
 #scriptdir/rec.sh channel startts durmin name
 """
-    
-    def __init__(self, timerdir, cmd="/media/hdd/backup/iptv/rec.sh"):
-        self.timerdir = timerdir # os.path.join(os.environ["HOME"],"config","systemd","user")
-        self.cmd = cmd
-        self.defdurationm = 60
-        self.defdelaym = 15
 
     def _timerfile(self, name):
         return os.path.join(self.timerdir, "tv-"+name+".timer")
@@ -78,7 +83,7 @@ Type=oneshot
             ldatesched = ldate + datetime.timedelta(minutes=ldurationm + ldelay)
 
             if len(lrepeat) > 0:
-                ldt = lrepeat + " *-*-* " + ldatesched.strftime("%H:%M")
+                ldt = lrepeat[:-1] + " *-*-* " + ldatesched.strftime("%H:%M")
             else:
                 ldt = ldatesched.strftime("%Y-%m-%d %H:%M")
 
@@ -87,7 +92,7 @@ Type=oneshot
 
         try:
             fd = open(self._timerfile(lname), "w")
-            fd.write(self.timertmpl % (ldt, lname))
+            fd.write(self.timertmpl % (json.dumps(timdef), ldt, lname))
             fd.close()
 
             if lenabled:
@@ -106,18 +111,37 @@ Type=oneshot
             return 2 # error in writing, timer removed
         return 0 # ok
 
+    def get(self, name):
+        timdef = {}
+        timerlist = glob.glob(self._timerfile(name))
+        try:
+            if len(timerlist) == 1:
+                fd = open(timerlist[0])
+                for l in fd.readlines():
+                    if l.startswith(self.comstr):
+                        timdef = json.loads(l[len(self.comstr):])
+                fd.close()
+        except:
+            pass # improve
+        return timdef
+
+    
 if __name__ == "__main__":
     try:
         os.mkdir("testtvtimer")
     except:
         pass
-    testtv = tvTimer(os.path.join(os.getcwd(), "testtvtimer"))
+    testtv = tvTimerSystemd(os.path.join(os.getcwd(), "testtvtimer"))
     print(testtv.list())
     r = testtv.add({"name": "provatv", "channel": "grande", "date": "2022-03-05 08:40", "duration": 5})
     print(r)
     r = testtv.add({"name": "chespasso", "channel": "giudecca", "date": "2022-03-12 21:30", "duration": 10})
     print(r)
+    r = testtv.add({"name": "piuspesso", "channel": "cannaregio", "date": "2022-03-15 16:00", "duration": 20, "repeat": [1,2,3,4,5]})
+    print(r)
     print(testtv.list())
+    for e in testtv.list():
+        print(testtv.get(e))
     testtv.remove("chespasso")
     print(testtv.list())
                
