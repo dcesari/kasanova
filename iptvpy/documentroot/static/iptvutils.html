@@ -10,7 +10,11 @@
 
 <div id="tabs" style="width: 100%;"></div>
 <!-- <div id="selected-tab" style="padding: 10px 0px">tab1</div> -->
-<div id="tab1" style="display: none; padding: 10px 0px">l'abbiamo sempre fatto</div>
+<div id="tab1" style="display: none; padding: 10px 0px">
+  Lista dei timer
+  <div id="timergrid" style="width: 600px">
+  </div>
+</div>
 <div id="tab2" style="display: none; padding: 10px 0px">lo facciamo</div>
 <div id="tab3" style="display: none; padding: 10px 0px">
   <div id="dlform" style="width: 600px">
@@ -42,15 +46,36 @@
       tabs.render($('#tabs')[0]);
       $('#tab1').show();
 
+      $('#timergrid').w2grid({
+	  name: 'timergrid',
+//	  recid: 'name',
+	  url: '/api/timer',
+	  show: {
+              toolbar: true,
+              toolbarDelete: true,
+              toolbarAdd: true,
+              toolbarReload: true
+          },
+	  columns: [
+	      {field: 'name', text: 'Nome', size: '20%'},
+	      {field: 'channel', text: 'Canale', size: '20%'},
+	      {field: 'date', text: 'Data', size: '15%', render: 'date'},
+	      {field: 'time', text: 'Ora', size: '15%', render: 'time'},
+	      {field: 'duration', text: 'Durata', size: '10%', render: 'int'},
+	      {field: 'repeat', text: 'Ripetizione', size: '15%'},
+	      {field: 'enabled', text: 'Abilitato', size: '5%'}
+	  ]
+      })
+
       $('#dlform').w2form({
           name: 'dlform',
 	  url: '/api/download', // formURL ?
 	  dataType: 'RESTFULLJSON',
 	  header: 'Scarica un file da un URL remoto sul ricevitore',
         fields : [
-            { name: 'dlurl', type: 'text', required: true,
+            { field: 'dlurl', type: 'text', required: true,
 	      html: {label: 'URL da scaricare'}},
-            { name: 'dldir',  type: 'text', required: true,
+            { field: 'dldir',  type: 'text', required: true,
 	      html: {label: 'cartella di destinazione'}}
         ],
         actions: {
@@ -62,7 +87,8 @@
                 this.save();
             }
         }
-    });
+      });
+
 });
 </script>
 

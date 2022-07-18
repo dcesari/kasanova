@@ -55,6 +55,9 @@ Type=oneshot
             cleanlist.append(self._timername(t))
         return cleanlist
 
+    def count(self):
+        return len(glob.glob(self._timerfile("*")))
+
     def remove(self, name):
         try:
             os.unlink(self._timerfile(name))

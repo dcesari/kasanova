@@ -2,7 +2,8 @@
  
 import SimpleHTTPServer
 import BaseHTTPServer
-import cgi
+#import cgi
+import urlparse
 import os
 import ssl
 import json
@@ -41,7 +42,6 @@ class AuthHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         global apipath, filepath
-        print self.path
         if self._checkauth():
             if self.path.startswith(apipath):
                 self.do_apiget()
@@ -53,7 +53,6 @@ class AuthHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
 
     def do_POST(self):
         global apipath, filepath
-        print self.path
         if self._checkauth():
             if self.path.startswith(apipath):
                 self.do_apipost()
@@ -76,7 +75,13 @@ class AuthHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
 
 
     def do_apiget(self):
-        path = self.path.split("/")
+        pq = self.path.split("?")
+        path = pq[0].split("/")
+        try:
+            req = urllib.unquote(pq[1])
+            req = json.loads(req[req.index("{")])
+        except:
+            req = None # {}
         if len(path) >= 3:
             if path[2] == "channelist":
                 self.do_apiresp(200, "application/json")
@@ -89,15 +94,16 @@ class AuthHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
                 timerget = {}
                 if len(path) >= 4:
                     timerget = self.timer.get(path[3])
-                    self.do_apiresp(200, "application/json")
-                    self.wfile.write(json.dumps(timerget),
-                                     {"status": "success", "total": 1,
-                                      "records": [timerget]
-                                      }) # improve
+                    self.do_apiresp(200, "application/json",
+                                    {"status": "success", "total": 1,
+                                     "records": [timerget]}) # improve
                 else:
-                    self.do_apiresp(400, "application/json",
-                                    json.dumps({"status": "error",
-                                                "message": "Timer not specified"}))
+                    records = []
+                    for r in self.timer.list():
+                        records.append(self.timer.get(r))
+                    self.do_apiresp(200, "application/json",
+                                    json.dumps({"status": "success", "total": len(records),
+                                     "records": records})) # improve
         else:
             self.do_apiresp(404, "text/plain", "not found")
                 
@@ -184,7 +190,8 @@ server_address = ("", 8000)
 
 handler = AuthHandler
 handler.have_fork = False
-handler.timer = tvtimer.tvTimer(".local")
+handler.timer = tvtimer.tvTimerSystemd(".local")
+handler.timer.add({"recid":1,"name":"prova","channel":"ttv","date":"2022-05-12 08:00","duration":60})
 
 httpd = BaseHTTPServer.HTTPServer(server_address, handler)
 httpd.socket = ssl.wrap_socket(httpd.socket, keyfile='../key.pem', certfile='../cert.pem', server_side=True)
