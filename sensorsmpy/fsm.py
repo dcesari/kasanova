@@ -34,9 +34,9 @@ class DigitalIn(KnovaTool):
 
     def connect(self, unitlist):
         self.outs = []
-        for l in unitlist:
-            if isinstance(unitlist[l], Switch):
-                self.outs.append(unitlist[l])
+        for u in unitlist:
+            if isinstance(u, Switch):
+                self.outs.append(u)
 
         if self.web:
             unitlist["web"].register((self.name,"get"), self.getstate)
@@ -44,7 +44,12 @@ class DigitalIn(KnovaTool):
             unitlist["web"].register((self.name,"set","off"), self.off)
             unitlist["web"].register((self.name,"set","pulseon"), self.pulseon)
             unitlist["web"].register((self.name,"set","pulseoff"), self.pulseoff)
+        # schedule self.initdelay activate
+
+    def activate(self):
+        self.signalchange()
         # machine.irq(self.pin)
+        
 
     def signalchange(self):
         for trig in self.outs:
@@ -83,10 +88,12 @@ class DigitalOut(KnovaTool):
     def connect(self, unitlist):
         if self.web:
             unitlist["web"].register((self.name,"get"), self.getstate)
+        self.setoutput()
 
-    def setoutput(self, state):
-        if self.invert: self.state[0] = 1 - state
-        else: self.state[0] = state
+    def setoutput(self, state=None):
+        if state is not None:
+            if self.invert: self.state[0] = 1 - state
+            else: self.state[0] = state
         # machine.pin(self.pin, self.state[0])~
 
             
