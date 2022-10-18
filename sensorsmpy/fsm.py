@@ -12,10 +12,10 @@ states = [
 
 class KnovaTool:
     unitlist = {}
-    
+
     def registertool(self)):
         KnovaTool.unitlist[self.name] = self
-        
+
     def connect(self, origin=None):
         if origin is not None:
             self.ins.append(origin)
@@ -43,7 +43,7 @@ class DigitalIn(KnovaTool):
         self.pushtype = conf.get("pushtype", "push") # push or release
         self.invert = conf.get("invert", False)
         self.web = conf.get("web", False)
-        
+
         self.pin = machine.pin(conf["pin"], mode=machine.pin.IN) #...
         self.connectedto = conf.get("connectedto",[])
 #        self.defaultstate = conf.get("defaultstate", 0)
