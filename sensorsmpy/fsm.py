@@ -11,6 +11,22 @@ states = [
 #  ontimer, ontimerend, offtimer, offtimerend
 
 class KnovaTool:
+    unitlist = {}
+    
+    def registertool(self)):
+        KnovaTool.unitlist[self.name] = self
+        
+    def connect(self, origin=None):
+        if origin is not None:
+            self.ins.append(origin)
+
+        self.outs = []
+        # detect connected units and call their connect method in cascade
+        for u in self.connectedto:
+#            if isinstance(KnovaTool.unitlist[u], Switch):
+            self.outs.append(KnovaTool.unitlist[u])
+            KnovaTool.unitlist[u].connect(self)
+
     def getstate(self, req, qs):
         state = {}
         i = 0
@@ -19,71 +35,80 @@ class KnovaTool:
             i = i + 1
         return state
 
+
 class DigitalIn(KnovaTool):
     def __init__(self, conf):
         self.name = conf["name"]
+        self.buttontype = conf.get("buttontype", "onoff") # onoff or push
+        self.pushtype = conf.get("pushtype", "push") # push or release
         self.invert = conf.get("invert", False)
         self.web = conf.get("web", False)
-        self.pin = conf["pin"]
-        self.defaultstate = conf.get("defaultstate", 0)
+        
+        self.pin = machine.pin(conf["pin"], mode=machine.pin.IN) #...
+        self.connectedto = conf.get("connectedto",[])
+#        self.defaultstate = conf.get("defaultstate", 0)
         self.initdelay = conf.get("initdelay", 0)
-        self.remainon = conf.get("remainon", 0)
 
         self.state = bytearr(0)
         self.state[0] = self.defaultstate
+        self.registertool()
 
-    def connect(self, unitlist):
-        self.outs = []
-        for u in unitlist:
-            if isinstance(u, Switch):
-                self.outs.append(u)
-
+    def connect(self, origin=None):
+        # call base connect method
+        KnovaTool.connect(origin)
+        # connect to web server
         if self.web:
-            unitlist["web"].register((self.name,"get"), self.getstate)
-            unitlist["web"].register((self.name,"set","on"), self.on)
-            unitlist["web"].register((self.name,"set","off"), self.off)
-            unitlist["web"].register((self.name,"set","pulseon"), self.pulseon)
-            unitlist["web"].register((self.name,"set","pulseoff"), self.pulseoff)
-        # schedule self.initdelay activate
+            KnovaTool.unitlist["web"].register((self.name,"get"), self.getstate)
+            if self.buttontype == "onoff":
+                KnovaTool.unitlist["web"].register((self.name,"set","on"), self.on)
+                KnovaTool.unitlist["web"].register((self.name,"set","off"), self.off)
+            else:
+                KnovaTool.unitlist["web"].register((self.name,"set","push"), self.push)
+        # schedule self.initdelay activate or activate suddendly?
 
     def activate(self):
-        self.signalchange()
-        # machine.irq(self.pin)
+        self.signalchange() # required?
+        # implement self.invert!
+        if self.buttontype == "onoff":
+            self.pin.irq(handler=self.on, trigger=machine.Pin.IRQ_HIGH_LEVEL)
+            #, priority=1, wake=None, hard=False)
+            self.pin.irq(handler=self.off, trigger=machine.Pin.IRQ_LOW_LEVEL)
+        else:
+            if self.pushtype == "push":
+                self.pin.irq(handler=self.push, trigger=machine.Pin.IRQ_RISING)
+            else:
+                self.pin.irq(handler=self.push, trigger=machine.Pin.IRQ_FALLING)
         
 
     def signalchange(self):
         for trig in self.outs:
             trig.autotrigchange()
 
-    def on(self, req, qs):
-        self.state[0] = 1 - self.invert
+    def on(pin):
+        pin.ref.state[0] = 1
+        pin.ref.signalchange()
+
+    def off(self):
+        self.state[0] = 0
         self.signalchange()
 
-    def off(self, req, qs):
-        self.state[0] = self.invert
+    def push(self):
+        self.state[0] = 1
         self.signalchange()
-
-    def pulseon(self, req, qs):
-        self.state[0] = 1 - self.invert
-        # signalchange
-        # schedule off
-
-    def pulseoff(self, req, qs):
-        self.state[0] = self.invert
-        # signalchange
-        # schedule on
 
 
 class DigitalOut(KnovaTool):
     def __init__(self, conf):
         self.name = conf["name"]
         self.invert = conf.get("invert", False)
+        self.ins = []
         self.web = conf.get("web", False)
         self.pin = conf["pin"]
         self.defaultstate = conf.get(conf["defaultstate"], 0)
 
         self.state = bytearr(1)
         self.state[0] = self.defaultstate
+        self.registertool()
 
     def connect(self, unitlist):
         if self.web:
@@ -100,9 +125,9 @@ class DigitalOut(KnovaTool):
 class Switch:
     def __init__(self, conf):
         self.name = conf["name"]
-        self.inputs = conf.get("inputs", [])
-        self.output = conf["output"]
         self.inputop = conf.get("inputop", "or")
+        self.connectedto = conf.get("connectedto",[])
+        self.ins = []
         self.web = conf.get("web", False)
         self.timerdeflen = conf.get("timerdeflen", 60)
         self.defaultstate = conf.get(conf["defaultstate"], 0)
@@ -116,12 +141,13 @@ class Switch:
         self.state[2] = 0 # output by timer off
         self.state[3] = self.defaultstate # output off
         self.setinput() # call autotrigchange?
+        self.registertool()
 
-    def connect(self, unitlist):
-        self.ins = []
-        for inp in self.inputs:
-            self.ins.append(unitlist["inp"])
-        self.out = unitlist["out"]
+    def connect(self, origin=None): #, unitlist):
+
+        # call base connect method
+        KnovaTool.connect(origin)
+
         if self.web:
             unitlist["web"].register((self.name,"set","on"), self.onman)
             unitlist["web"].register((self.name,"set","ontimer"), self.ontimer)
