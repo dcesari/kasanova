@@ -10,6 +10,8 @@ states = [
 # events = setman, setnoman, onman, offman, autotrigrise, autotrigdrop,
 #  ontimer, ontimerend, offtimer, offtimerend
 
+import micropython
+
 def KnovaDispatcher(conf):
     typ = conf.get("type", "")
     if conf["type"] == "onoffbutton":
@@ -29,9 +31,11 @@ class KnovaTool:
     def __init__(self, conf):
         self.name = conf["name"]
         self.typ = conf["type"]
-
-    def registertool(self)):
+        self.web = conf.get("web", False)
         KnovaTool.unitlist[self.name] = self
+
+    # def registertool(self)):
+    #     KnovaTool.unitlist[self.name] = self
 
     def connect(self, origin=None):
         if origin is not None:
@@ -53,26 +57,23 @@ class KnovaTool:
         return state
 
 
-class PushButton(KnovaTool):
+class KnovaPushButton(KnovaTool):
     def __init__(self, conf):
-        self.name = conf["name"]
-        self.typ = conf["type"]
+        super().__init__(conf)
         self.pushtype = conf.get("pushtype", "push") # push or release
         self.invert = conf.get("invert", False)
-        self.web = conf.get("web", False)
-
         self.pin = machine.pin(conf["pin"], mode=machine.pin.IN) #...
         self.connectedto = conf.get("connectedto",[])
         self.initdelay = conf.get("initdelay", 0)
         self.filterms = conf.get("filterms", 200) # <=0 to disable debounce filter
 
-        self.state = bytearr(0)
+        self.state = bytearr(1)
         self.state[0] = self.defaultstate
-        self.registertool()
+
 
     def connect(self, origin=None):
         # call base connect method
-        KnovaTool.connect(origin)
+        super().connect(origin)
         # connect to web server
         if self.web:
             KnovaTool.unitlist["web"].register((self.name,"get"), self.getstate)
@@ -90,38 +91,37 @@ class PushButton(KnovaTool):
 
 
     def signalchange(self):
+        if self.filterms > 0:
+            now = time.ticks_ms()
+            nownw = time.time() # consider using this as a wrap check
+            if time.ticks_diff(now - self.lastevent) < self.filterms: return # too early, do nothing
+            self.lastevent = now
+            self.lasteventnw = nownw
         for trig in self.outs:
             trig.autotrigchange()
 
     def push(self, pin):
-        self.lastevent = time.ticks_ms()
-        self.lasteventnw = time.time()
+        self.state[0] = 1 # will never change after first pushrelease?!
         micropython.schedule(self.signalchange, 0)
-        self.state[0] = 1 # will never change after first pushrelease
-        self.signalchange()
 
 
-class OnOffButton(KnovaTool):
+class KnovaOnOffButton(KnovaTool):
     def __init__(self, conf):
-        self.name = conf["name"]
-        self.typ = conf["type"]
+        super().__init__(conf)
         self.invert = conf.get("invert", False)
-        self.web = conf.get("web", False)
-
         self.pin = machine.pin(conf["pin"], mode=machine.pin.IN) #...
         self.connectedto = conf.get("connectedto",[])
         self.defaultstate = conf.get("defaultstate", 0)
         self.initdelay = conf.get("initdelay", 0)
         self.filterms = conf.get("filterms", 200) # <=0 to disable debounce filter
 
-        self.state = bytearr(0)
+        self.state = bytearr(1)
         self.state[0] = self.defaultstate
-        self.registertool()
 
 
     def connect(self, origin=None):
         # call base connect method
-        KnovaTool.connect(origin)
+        super().connect(origin)
         # connect to web server
         if self.web:
             KnovaTool.unitlist["web"].register((self.name,"get"), self.getstate)
@@ -141,36 +141,34 @@ class OnOffButton(KnovaTool):
         
 
     def signalchange(self):
+        if self.filterms > 0:
+            now = time.ticks_ms()
+            nownw = time.time() # consider using this as a wrap check
+            if time.ticks_diff(now - self.lastevent) < self.filterms: return # too early, do nothing
+            self.lastevent = now
+            self.lasteventnw = nownw
         for trig in self.outs:
             trig.autotrigchange()
 
     def on(self, pin):
-        self.lastevent = time.ticks_ms()
-        self.lasteventnw = time.time()
-        micropython.schedule(self.signalchange, 0)
         self.state[0] = 1
-        self.signalchange()
+        micropython.schedule(self.signalchange, 0)
 
     def off(self, pin):
-        self.lastevent = time.ticks_ms()
-        self.lasteventnw = time.time()
-        micropython.schedule(self.signalchange, 0)
         self.state[0] = 0
-        self.signalchange()
+        micropython.schedule(self.signalchange, 0)
 
 
 class DigitalOut(KnovaTool):
     def __init__(self, conf):
-        self.name = conf["name"]
+        super().__init__(conf)
         self.invert = conf.get("invert", False)
-        self.ins = []
-        self.web = conf.get("web", False)
         self.pin = conf["pin"]
-        self.defaultstate = conf.get(conf["defaultstate"], 0)
+        self.defaultstate = conf.get("defaultstate", 0)
 
         self.state = bytearr(1)
         self.state[0] = self.defaultstate
-        self.registertool()
+
 
     def connect(self, unitlist):
         if self.web:
@@ -184,18 +182,17 @@ class DigitalOut(KnovaTool):
         # machine.pin(self.pin, self.state[0])~
 
             
-class Switch:
+class KnovaSwitch:
     def __init__(self, conf):
-        self.name = conf["name"]
+        super().__init__(conf)
         self.inputop = conf.get("inputop", "or")
         self.connectedto = conf.get("connectedto",[])
         self.ins = []
-        self.web = conf.get("web", False)
         self.timerdeflen = conf.get("timerdeflen", 60)
         self.defaultstate = conf.get(conf["defaultstate"], 0)
 
-        if not self.web and len(inputs) == 0:
-            raise "no inputs"
+#        if not self.web and len(inputs) == 0:
+#            raise "no inputs"
 
         self.state = byterray(4) # auto trig, man, out timer, out
         if len(inputs) > 0: self.state[1] = 0 # automatic
@@ -203,7 +200,7 @@ class Switch:
         self.state[2] = 0 # output by timer off
         self.state[3] = self.defaultstate # output off
         self.setinput() # call autotrigchange?
-        self.registertool()
+
 
     def connect(self, origin=None): #, unitlist):
 
