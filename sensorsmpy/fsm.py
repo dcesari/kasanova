@@ -10,8 +10,25 @@ states = [
 # events = setman, setnoman, onman, offman, autotrigrise, autotrigdrop,
 #  ontimer, ontimerend, offtimer, offtimerend
 
+def KnovaDispatcher(conf):
+    typ = conf.get("type", "")
+    if conf["type"] == "onoffbutton":
+        return KnovaOnOffButton(conf)
+    if conf["type"] == "pushbutton":
+        return KnovaPushButton(conf)
+    if conf["type"] == "switch":
+        return KnovaSwitch(conf)
+    if conf["type"] == "digitalout":
+        return KnovaDigitalOut(conf)
+    return None
+
+
 class KnovaTool:
     unitlist = {}
+
+    def __init__(self, conf):
+        self.name = conf["name"]
+        self.typ = conf["type"]
 
     def registertool(self)):
         KnovaTool.unitlist[self.name] = self
@@ -36,18 +53,18 @@ class KnovaTool:
         return state
 
 
-class DigitalIn(KnovaTool):
+class PushButton(KnovaTool):
     def __init__(self, conf):
         self.name = conf["name"]
-        self.buttontype = conf.get("buttontype", "onoff") # onoff or push
+        self.typ = conf["type"]
         self.pushtype = conf.get("pushtype", "push") # push or release
         self.invert = conf.get("invert", False)
         self.web = conf.get("web", False)
 
         self.pin = machine.pin(conf["pin"], mode=machine.pin.IN) #...
         self.connectedto = conf.get("connectedto",[])
-#        self.defaultstate = conf.get("defaultstate", 0)
         self.initdelay = conf.get("initdelay", 0)
+        self.filterms = conf.get("filterms", 200) # <=0 to disable debounce filter
 
         self.state = bytearr(0)
         self.state[0] = self.defaultstate
@@ -59,41 +76,86 @@ class DigitalIn(KnovaTool):
         # connect to web server
         if self.web:
             KnovaTool.unitlist["web"].register((self.name,"get"), self.getstate)
-            if self.buttontype == "onoff":
-                KnovaTool.unitlist["web"].register((self.name,"set","on"), self.on)
-                KnovaTool.unitlist["web"].register((self.name,"set","off"), self.off)
-            else:
-                KnovaTool.unitlist["web"].register((self.name,"set","push"), self.push)
+            KnovaTool.unitlist["web"].register((self.name,"set","pushrelease"), self.push)
+        # schedule self.initdelay activate or activate suddendly?
+
+
+    def activate(self):
+        self.signalchange() # required?
+        cond = (self.pushtype == "push") != self.invert
+        if cond:
+            self.pin.irq(handler=self.push, trigger=machine.Pin.IRQ_RISING)
+        else:
+            self.pin.irq(handler=self.push, trigger=machine.Pin.IRQ_FALLING)
+
+
+    def signalchange(self):
+        for trig in self.outs:
+            trig.autotrigchange()
+
+    def push(self, pin):
+        self.lastevent = time.ticks_ms()
+        self.lasteventnw = time.time()
+        micropython.schedule(self.signalchange, 0)
+        self.state[0] = 1 # will never change after first pushrelease
+        self.signalchange()
+
+
+class OnOffButton(KnovaTool):
+    def __init__(self, conf):
+        self.name = conf["name"]
+        self.typ = conf["type"]
+        self.invert = conf.get("invert", False)
+        self.web = conf.get("web", False)
+
+        self.pin = machine.pin(conf["pin"], mode=machine.pin.IN) #...
+        self.connectedto = conf.get("connectedto",[])
+        self.defaultstate = conf.get("defaultstate", 0)
+        self.initdelay = conf.get("initdelay", 0)
+        self.filterms = conf.get("filterms", 200) # <=0 to disable debounce filter
+
+        self.state = bytearr(0)
+        self.state[0] = self.defaultstate
+        self.registertool()
+
+
+    def connect(self, origin=None):
+        # call base connect method
+        KnovaTool.connect(origin)
+        # connect to web server
+        if self.web:
+            KnovaTool.unitlist["web"].register((self.name,"get"), self.getstate)
+            KnovaTool.unitlist["web"].register((self.name,"set","on"), self.on)
+            KnovaTool.unitlist["web"].register((self.name,"set","off"), self.off)
         # schedule self.initdelay activate or activate suddendly?
 
     def activate(self):
         self.signalchange() # required?
-        # implement self.invert!
-        if self.buttontype == "onoff":
-            self.pin.irq(handler=self.on, trigger=machine.Pin.IRQ_HIGH_LEVEL)
+        if self.invert:
+            self.pin.irq(handler=self.on, trigger=machine.Pin.IRQ_LOW_LEVEL)
             #, priority=1, wake=None, hard=False)
-            self.pin.irq(handler=self.off, trigger=machine.Pin.IRQ_LOW_LEVEL)
+            self.pin.irq(handler=self.off, trigger=machine.Pin.IRQ_HIGH_LEVEL)
         else:
-            if self.pushtype == "push":
-                self.pin.irq(handler=self.push, trigger=machine.Pin.IRQ_RISING)
-            else:
-                self.pin.irq(handler=self.push, trigger=machine.Pin.IRQ_FALLING)
+            self.pin.irq(handler=self.on, trigger=machine.Pin.IRQ_HIGH_LEVEL)
+            self.pin.irq(handler=self.off, trigger=machine.Pin.IRQ_LOW_LEVEL)
         
 
     def signalchange(self):
         for trig in self.outs:
             trig.autotrigchange()
 
-    def on(pin):
-        pin.ref.state[0] = 1
-        pin.ref.signalchange()
-
-    def off(self):
-        self.state[0] = 0
+    def on(self, pin):
+        self.lastevent = time.ticks_ms()
+        self.lasteventnw = time.time()
+        micropython.schedule(self.signalchange, 0)
+        self.state[0] = 1
         self.signalchange()
 
-    def push(self):
-        self.state[0] = 1
+    def off(self, pin):
+        self.lastevent = time.ticks_ms()
+        self.lasteventnw = time.time()
+        micropython.schedule(self.signalchange, 0)
+        self.state[0] = 0
         self.signalchange()
 
 
