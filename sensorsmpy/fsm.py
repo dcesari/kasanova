@@ -63,6 +63,11 @@ class KnovaTool:
         # do nothing if not overridden
         return
 
+    def activateall():
+        # class method for activating all configured instances
+        for u in KnovaTool.unitlist:
+            KnovaTool.unitlist[u].activate()
+
 
     def propagate(self, origin):
         for out in self.outs:
@@ -107,7 +112,6 @@ class KnovaPushButton(KnovaTool):
             KnovaTool.unitlist["web"].register((self.name,"set","pushrelease"), self.pushweb)
             KnovaTool.unitlist["web"].register((self.name,"set","enable"), self.enable)
             KnovaTool.unitlist["web"].register((self.name,"set","disable"), self.disable)
-        # schedule self.initdelay activate or activate suddendly?
 
 
     def activate(self):
@@ -158,9 +162,7 @@ class KnovaOnOffButton(KnovaTool):
         super().connect() # call base connect method
         if self.web: # connect to web server
             KnovaTool.unitlist["web"].register((self.name,"get"), self.getstate)
-#            KnovaTool.unitlist["web"].register((self.name,"set","on"), self.on)
-#            KnovaTool.unitlist["web"].register((self.name,"set","off"), self.off)
-        # schedule self.initdelay activate or activate suddendly?
+
 
     def activate(self):
 #        self.propagate() # required?
@@ -365,7 +367,7 @@ class KnovaOnOffSwitch(KnovaTool):
         return 0
 
     def ontimerend(self, timer):
-        micropython.schedule(self.onofftimerend, 1) # schedule to stay on button side
+        micropython.schedule(self.mptimerend, 1)
 
     def offtimer(self, req, qs):
         self.timeroff()
@@ -378,10 +380,9 @@ class KnovaOnOffSwitch(KnovaTool):
         return 0
 
     def offtimerend(self):
-        micropython.schedule(self.onofftimerend, 0) # schedule to stay on button side
+        micropython.schedule(self.mptimerend, 0)
 
-
-    def onofftimerend(self, state):
+    def mptimerend(self, state):
         self.timeroff()
         if self.state[1] == 0: # auto
             self.state[0] = self.state[3]
@@ -490,8 +491,10 @@ class KnovaTimedSwitch(KnovaTool):
 
 
     def timerend(self, timer):
+        micropython.schedule(self.mptimerend, 0)
+
+    def mptimerend(self, state):
         self.timeroff()
-#        self.timer = None
         self.state[3] = 0
         self.state[0] = 0
         super().propagate(self)
@@ -522,8 +525,6 @@ if __name__ == '__main__':
 
 
     KnovaTool.connectall()
+    KnovaTool.activateall()
 
-    but1.activate()
-    but2.activate()
-    but3.activate()
     time.sleep(10000)
