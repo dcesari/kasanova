@@ -1,15 +1,5 @@
 #!/usr/bin/micropython
 
-#states = [
-#    "at1_man1_osf1", "at0_man1_osf1", "at1_man0_osf1", "at0_man0_osf1",
-#    "at1_man1_osf0", "at0_man1_osf0", "at1_man0_osf0", "at0_man0_osf0",
-#    "at1_man1_ost1", "at0_man1_ost1", "at1_man0_ost1", "at0_man0_ost1",
-#    "at1_man1_ost0", "at0_man1_ost0", "at1_man0_ost0", "at0_man0_ost0"
-#          ]
-
-# events = setman, setnoman, onman, offman, autotrigrise, autotrigdrop,
-#  ontimer, ontimerend, offtimer, offtimerend
-
 import math
 import micropython
 import machine
@@ -40,7 +30,6 @@ class KnovaTool:
         self.typ = conf["type"]
         self.id = len(KnovaTool.unitlist) # unique progressive id
         self.upstreamconn = conf.get("upstreamconn",[])
-        self.connected = False
         self.ins = []
         self.outs = []
         self.filterms = conf.get("filterms", -1) # >0 to enable debounce filter
@@ -51,20 +40,33 @@ class KnovaTool:
         self.web = conf.get("web", False)
         KnovaTool.unitlist[self.name] = self
 
-    def connect(self, downstream=None):
-        # store downstream units
-        if downstream is not None:
-            self.ins.append(downstream)
-        # detect upstream units and call their connect method in cascade once
-        if not self.connected:
-            for u in self.upstreamconn:
-                self.ins.append(KnovaTool.unitlist[u])
-                KnovaTool.unitlist[u].connect(downstream=self)
-        self.connected = True
 
-    def propagate(self):
+    def connect(self):
+        # store upstream unit instances and notify them of the connection
+        for u in self.upstreamconn:
+            self.ins.append(KnovaTool.unitlist[u])
+            KnovaTool.unitlist[u].notifyconnect(self)
+
+
+    def notifyconnect(self, downstream):
+        # store downstream unit instances
+        self.outs.append(downstream)
+
+
+    def connectall():
+        # class method for connecting all configured instances
+        for u in KnovaTool.unitlist:
+            KnovaTool.unitlist[u].connect()
+
+
+    def activate(self):
+        # do nothing if not overridden
+        return
+
+
+    def propagate(self, origin):
         for out in self.outs:
-            out.propagate()
+            out.propagate(self)
 
     def noisefilter(self):
         if self.filterms > 0:
@@ -93,16 +95,19 @@ class KnovaPushButton(KnovaTool):
         self.pin = machine.Pin(conf["pin"], mode=machine.Pin.IN) #...
         self.initdelay = conf.get("initdelay", 0)
 
-        self.state = bytearray(1)
+        self.state = bytearray(2)
         self.state[0] = 0
+        self.state[1] = 1 # start enabled
 
 
-    def connect(self, downstream=None):
-        if self.web and not self.connected: # connect to web server once
+    def connect(self):
+        super().connect() # call base connect method
+        if self.web: # connect to web server
             KnovaTool.unitlist["web"].register((self.name,"get"), self.getstate)
-            KnovaTool.unitlist["web"].register((self.name,"set","pushrelease"), self.push)
+            KnovaTool.unitlist["web"].register((self.name,"set","pushrelease"), self.pushweb)
+            KnovaTool.unitlist["web"].register((self.name,"set","enable"), self.enable)
+            KnovaTool.unitlist["web"].register((self.name,"set","disable"), self.disable)
         # schedule self.initdelay activate or activate suddendly?
-        super().connect(downstream) # call base connect method
 
 
     def activate(self):
@@ -113,13 +118,28 @@ class KnovaPushButton(KnovaTool):
             self.pin.irq(handler=self.push, trigger=machine.Pin.IRQ_FALLING)
 
 
-    def propagate(self):
+    def startpropagate(self, state):
         if self.noisefilter(): return
-        super().propagate
+        super().propagate(self)
 
     def push(self, pin):
-        self.state[0] = 1 # will never change after first pushrelease?!
-        micropython.schedule(self.propagate, 0)
+        if self.state[1] == 1:
+            self.state[0] = 1 # will never change after first pushrelease?!
+            micropython.schedule(self.startpropagate, 1)
+
+
+    def pushweb(self):
+        if self.state[1] == 1:
+            super().propagate(self)
+        return 0
+
+    def enable(self):
+        self.state[1] = 1
+        return 0
+
+    def disable(self):
+        self.state[1] = 0
+        return 0
 
 
 class KnovaOnOffButton(KnovaTool):
@@ -134,16 +154,16 @@ class KnovaOnOffButton(KnovaTool):
         self.state[0] = self.defaultstate
 
 
-    def connect(self, downstream=None):
-        if self.web and not self.connected: # connect to web server once
+    def connect(self):
+        super().connect() # call base connect method
+        if self.web: # connect to web server
             KnovaTool.unitlist["web"].register((self.name,"get"), self.getstate)
 #            KnovaTool.unitlist["web"].register((self.name,"set","on"), self.on)
 #            KnovaTool.unitlist["web"].register((self.name,"set","off"), self.off)
         # schedule self.initdelay activate or activate suddendly?
-        super().connect(downstream) # call base connect method
 
     def activate(self):
-        self.propagate() # required?
+#        self.propagate() # required?
         if self.invert:
             self.pin.irq(handler=self.on, trigger=machine.Pin.IRQ_FALLING)
             #, priority=1, wake=None, hard=False)
@@ -153,19 +173,18 @@ class KnovaOnOffButton(KnovaTool):
             self.pin.irq(handler=self.off, trigger=machine.Pin.IRQ_FALLING)
         
 
-    def propagate(self):
+    def startpropagate(self, state):
         if self.noisefilter(): return
+        # self.pin.value() is ignored due to noise filter, trust sign of irq service
         # schedule a state refresh after self.filterms???
-        self.state[0] = self.pin.value() != self.invert
-        super().propagate
+        self.state[0] = state != self.invert
+        super().propagate(self)
 
     def on(self, pin):
-#        self.state[0] = 1
-        micropython.schedule(self.propagate, 0)
+        micropython.schedule(self.startpropagate, 1)
 
     def off(self, pin):
-#        self.state[0] = 0
-        micropython.schedule(self.propagate, 0)
+        micropython.schedule(self.startpropagate, 0)
 
 
 class KnovaDigitalOut(KnovaTool):
@@ -179,18 +198,20 @@ class KnovaDigitalOut(KnovaTool):
         self.state[0] = self.defaultstate
 
 
-    def connect(self, downstream=None):
-        if self.web and not self.connected: # connect to web server once
+    def connect(self):
+        super().connect() # call base connect method
+        if self.web: # connect to web server
             KnovaTool.unitlist["web"].register((self.name,"get"), self.getstate)
-        super().connect(downstream) # call base connect method
 
 
-    def propagate(self):
-        for inp in self.ins:
-            self.state[0] = inp.state[0] != self.invert
-        # machine.Pin(self.pin, self.state[0])~
+    def propagate(self, origin):
+#        for inp in self.ins:
+#            self.state[0] = inp.state[0] != self.invert
+#            self.pin.value(self.state[0])
+        self.state[0] = origin.state[0] != self.invert
+        self.pin.value(self.state[0])
 
-            
+
 class KnovaToggleSwitch(KnovaTool):
     def __init__(self, conf):
         super().__init__(conf)
@@ -202,59 +223,56 @@ class KnovaToggleSwitch(KnovaTool):
         self.state[3] = self.defaultstate
 
 
-    def connect(self, downstream=None): #, unitlist):
-        if self.web and not self.connected: # connect to web server once
+    def connect(self):
+        super().connect() # call base connect method
+        if self.web: # connect to web server
             KnovaTool.unitlist["web"].register((self.name,"set","on"), self.onman)
-            KnovaTool.unitlist["web"].register((self.name,"set","ontimer"), self.ontimer)
+#            KnovaTool.unitlist["web"].register((self.name,"set","ontimer"), self.ontimer)
             KnovaTool.unitlist["web"].register((self.name,"set","off"), self.offman)
-            KnovaTool.unitlist["web"].register((self.name,"set","offtimer"), self.offtimer)
+#            KnovaTool.unitlist["web"].register((self.name,"set","offtimer"), self.offtimer)
             KnovaTool.unitlist["web"].register((self.name,"set","toggle"), self.toggleman)
-            KnovaTool.unitlist["web"].register((self.name,"set","auto"), self.noman)
-            KnovaTool.unitlist["web"].register((self.name,"set","man"), self.man)
             KnovaTool.unitlist["web"].register((self.name,"get"), self.getstate)
-        KnovaTool.connect(downstream) # call base connect method
-        if len(ins) > 0: self.state[1] = 0 # automatic
-        else: self.state[1] = 1 # manual
-            
+        if len(ins) > 0:
+            self.state[1] = 0 # automatic
+            KnovaTool.unitlist["web"].register((self.name,"set","auto"), self.setauto)
+            KnovaTool.unitlist["web"].register((self.name,"set","man"), self.setman)
+
+        else:
+            self.state[1] = 1 # manual
+
 
     def setman(self, req, qs):
         self.state[1] = 1
         return 0
 
-    def setnoman(self, req, qs):
+    def setauto(self, req, qs):
         self.state[1] = 0
-        self.state[2] = 0
         # self.state[0] = self.state[3] # better keep last manual state
         self.state[3] = self.state[0]
-        self.setoutput()
+        # super().propagate(self) # do not propagate if no change occurs
         return 0
 
     def onman(self, req, qs):
-        self.state[2] = 0
         self.state[0] = 1
-        self.setoutput()
+        super().propagate(self)
         return 0
 
     def offman(self, req, qs):
-        self.state[2] = 0
         self.state[0] = 0
-        self.setoutput()
+        super().propagate(self)
         return 0
 
     def toggleman(self, req, qs):
-        self.state[2] = 0
         self.state[0] = 1 - self.state[0]
-        self.setoutput()
+        super().propagate(self)
         return 0
 
-    def propagate(self): # consider adding a second argument to disable toggle
-        if self.state[1] == 1: return # do not update and propagate in manual state
-        for inp in self.ins:
-            if inp.state[0] == 1:
-                self.state[3] = 1 - self.state[3]
-                self.state[0] = self.state[3]
-                super().propagate
-                return
+    def propagate(self, origin):
+        if self.state[1] == 1: return # do not update neither propagate in manual state
+        # if inp.state[0] == 1:
+        self.state[3] = 1 - self.state[3]
+        self.state[0] = self.state[3]
+        super().propagate(self)
 
 
 class KnovaOnOffSwitch(KnovaTool):
@@ -270,64 +288,53 @@ class KnovaOnOffSwitch(KnovaTool):
         self.timer = None
 
 
-    def connect(self, downstream=None): #, unitlist):
-        if self.web and not self.connected: # connect to web server once
+    def connect(self):
+        super().connect() # call base connect method
+        if self.web: # connect to web server
             KnovaTool.unitlist["web"].register((self.name,"set","on"), self.onman)
             KnovaTool.unitlist["web"].register((self.name,"set","ontimer"), self.ontimer)
             KnovaTool.unitlist["web"].register((self.name,"set","off"), self.offman)
             KnovaTool.unitlist["web"].register((self.name,"set","offtimer"), self.offtimer)
             KnovaTool.unitlist["web"].register((self.name,"set","toggle"), self.toggleman)
-            KnovaTool.unitlist["web"].register((self.name,"set","auto"), self.noman)
-            KnovaTool.unitlist["web"].register((self.name,"set","man"), self.man)
             KnovaTool.unitlist["web"].register((self.name,"get"), self.getstate)
-        super().connect(downstream) # call base connect method
-        if len(ins) > 0: self.state[1] = 0 # automatic
-        else: self.state[1] = 1 # manual
+        if len(ins) > 0:
+            self.state[1] = 0 # automatic
+            KnovaTool.unitlist["web"].register((self.name,"set","auto"), self.setauto)
+            KnovaTool.unitlist["web"].register((self.name,"set","man"), self.setman)
+        else:
+            self.state[1] = 1 # manual
             
 
     def setman(self, req, qs):
-        if self.timer is not None:
-            self.timer.deinit()
-            self.timer = None
+        self.timeroff()
         self.state[1] = 1
         return 0
 
-    def setnoman(self, req, qs):
-        if self.timer is not None:
-            self.timer.deinit()
-            self.timer = None
+    def setauto(self, req, qs):
+        self.timeroff()
         self.state[1] = 0
-        self.state[2] = 0
-        self.state[3] = self.state[0]
-        self.setoutput()
+        self.state[0] = self.state[3] # set state to automatic state which was updated in background
+        super().propagate(self)
         return 0
 
     def onman(self, req, qs): # does this make sense without setting state[1] == 1?
-        if self.timer is not None:
-            self.timer.deinit()
-            self.timer = None
-        self.state[2] = 0
+        self.timeroff()
         self.state[0] = 1
-        self.setoutput()
+        super().propagate(self)
         return 0
 
     def offman(self, req, qs):
-        if self.timer is not None:
-            self.timer.deinit()
-            self.timer = None
-        self.state[2] = 0
+        self.timeroff()
         self.state[0] = 0
-        self.setoutput()
+        super().propagate(self)
         return 0
 
     def toggleman(self, req, qs):
-        if self.timer is not None:
-            self.timer.deinit()
-            self.timer = None
-        self.state[2] = 0
+        self.timeroff()
         self.state[0] = 1 - self.state[0]
-        self.setoutput()
+        super().propagate(self)
         return 0
+
 
     def propagate(self):
         if self.inputop == "and":
@@ -344,55 +351,58 @@ class KnovaOnOffSwitch(KnovaTool):
                 self.state[3] = self.state[3] != inp.state[0]
         if self.state[1] == 0:
             self.state[0] = self.state[3]
-        super().propagate
+        super().propagate(self)
 
 
     def ontimer(self, req, qs):
-        if self.timer is not None:
-            self.timer.deinit()
-        self.state[2] = 1
+        self.timeroff()
         self.state[0] = 1
-        self.setoutput()
+        super().propagate(self)
         # get period from qs
         self.timer = machine.Timer(self.id, mode=machine.Timer.ONE_SHOT,
-                                   period=10000, callback=self.ontimerend)
+                                   period=self.timerdeflen,
+                                   callback=self.ontimerend)
         return 0
 
     def ontimerend(self, timer):
-        self.timer = None
-        self.state[2] = 0
-        if self.state[1] == 0: # auto
-            self.state[0] = self.state[3]
-        else: # man
-            self.state[0] = 0
-        micropython.schedule(self.setoutput()) # schedule to stay on button side
+        micropython.schedule(self.onofftimerend, 1) # schedule to stay on button side
 
     def offtimer(self, req, qs):
-        if self.timer is not None:
-            self.timer.deinit()
-        self.state[2] = 1
+        self.timeroff()
         self.state[0] = 0
-        self.setoutput()
+        super().propagate(self)
         # get period from qs
         self.timer = machine.Timer(self.id, mode=machine.Timer.ONE_SHOT,
-                                   period=10000, callback=self.offtimerend)
+                                   period=self.timerdeflen,
+                                   callback=self.offtimerend)
         return 0
 
     def offtimerend(self):
-        self.timer = None
-        self.state[2] = 0
+        micropython.schedule(self.onofftimerend, 0) # schedule to stay on button side
+
+
+    def onofftimerend(self, state):
+        self.timeroff()
         if self.state[1] == 0: # auto
             self.state[0] = self.state[3]
         else:# man
-            self.state[0] = 1
-        micropython.schedule(self.setoutput()) # schedule to stay on button side
+            self.state[0] = state
+        super().propagate(self)
+
+
+    def timeroff(self):
+        if self.timer is not None:
+            self.timer.deinit()
+        self.timer = None
+        self.timerincr = 0
+        self.state[2] = 0
 
 
 class KnovaTimedSwitch(KnovaTool):
     def __init__(self, conf):
         super().__init__(conf)
         self.timerdeflen = conf.get("timerdeflen", 60)
-        self.defaultstate = conf.get("defaultstate", 0)
+        self.defaultstate = 0 # conf.get("defaultstate", 0)
         self.state = bytearray(4) # out, man, out timer, auto out
         self.state[2] = 0 # output by timer off
         self.state[0] = self.defaultstate
@@ -401,113 +411,117 @@ class KnovaTimedSwitch(KnovaTool):
         self.timerincr = 0
 
 
-    def connect(self, downstream=None): #, unitlist):
-        if self.web and not self.connected: # connect to web server once
+    def connect(self):
+        super().connect() # call base connect method
+        if self.web: # connect to web server
             KnovaTool.unitlist["web"].register((self.name,"set","on"), self.onman)
-            KnovaTool.unitlist["web"].register((self.name,"set","ontimer"), self.ontimer)
+#            KnovaTool.unitlist["web"].register((self.name,"set","ontimer"), self.ontimer)
             KnovaTool.unitlist["web"].register((self.name,"set","off"), self.offman)
-            KnovaTool.unitlist["web"].register((self.name,"set","offtimer"), self.offtimer)
+#            KnovaTool.unitlist["web"].register((self.name,"set","offtimer"), self.offtimer)
             KnovaTool.unitlist["web"].register((self.name,"set","toggle"), self.toggleman)
-            KnovaTool.unitlist["web"].register((self.name,"set","auto"), self.noman)
-            KnovaTool.unitlist["web"].register((self.name,"set","man"), self.man)
             KnovaTool.unitlist["web"].register((self.name,"get"), self.getstate)
-        super().connect(downstream) # call base connect method
-        if len(ins) > 0: self.state[1] = 0 # automatic
-        else: self.state[1] = 1 # manual
+        if len(ins) > 0:
+            self.state[1] = 0 # automatic
+            KnovaTool.unitlist["web"].register((self.name,"set","auto"), self.setauto)
+            KnovaTool.unitlist["web"].register((self.name,"set","man"), self.setman)
+        else:
+            self.state[1] = 1 # manual
             
 
     def setman(self, req, qs):
-        if self.timer is not None:
-            self.timer.deinit()
+        self.timeroff()
         self.state[1] = 1
         return 0
 
-    def setnoman(self, req, qs):
-        if self.timer is not None:
-            self.timer.deinit()
+    def setauto(self, req, qs):
+        self.timeroff()
         self.state[1] = 0
-        self.state[2] = 0
         self.state[3] = self.defaultstate
         self.state[0] = self.defaultstate
-        self.setoutput()
+        super().propagate(self)
         return 0
 
     def onman(self, req, qs):
-        if self.timer is not None:
-            self.timer.deinit()
-        self.state[2] = 0
+        self.timeroff()
         self.state[0] = 1
-        self.setoutput()
+        super().propagate(self)
         return 0
 
     def offman(self, req, qs):
-        if self.timer is not None:
-            self.timer.deinit()
-        self.state[2] = 0
+        self.timeroff()
         self.state[0] = 0
-        self.setoutput()
+        super().propagate(self)
         return 0
 
     def toggleman(self, req, qs):
-        if self.timer is not None:
-            self.timer.deinit()
-        self.state[2] = 0
+        self.timeroff()
         self.state[0] = 1 - self.state[0]
-        self.setoutput()
+        super().propagate(self)
         return 0
 
+
     def propagate(self):
-        if self.state[1] == 1: return # do not update and propagate in manual state
-        # add check on ins.state
+        if self.state[1] == 1: return # do not update neither propagate in manual state
+        self.state[3] = 1
+        self.state[0] = 1
+        self.state[2] = 1
+        super().propagate(self)
+        # schedule timer after setting the state, to avoid
+        # self.timerend being called before end of propagate
         if self.timermode == "restart":
             if self.timer is not None:
                 self.timer.deinit()
-            self.timer= machine.Timer(self.id, mode=machine.Timer.ONE_SHOT,
-                                      period=self.timerdeflen*1000,
-                                      callback=self.timerend)
+            self.timer=machine.Timer(self.id, mode=machine.Timer.ONE_SHOT,
+                                     period=self.timerdeflen*1000,
+                                     callback=self.timerend)
         elif self.timermode == "ignore":
             if self.timer is not None:
                 return
-            self.timer= machine.Timer(self.id, mode=machine.Timer.ONE_SHOT,
-                                      period=self.timerdeflen*1000,
-                                      callback=self.timerend)
+            self.timer=machine.Timer(self.id, mode=machine.Timer.ONE_SHOT,
+                                     period=self.timerdeflen*1000,
+                                     callback=self.timerend)
         elif self.timermode == "increment":
             if self.timer is not None:
                 self.timer.deinit()
             self.timerincr +=1
-            self.timer= machine.Timer(self.id, mode=machine.Timer.ONE_SHOT,
-                                      period=self.timerdeflen*1000*self.timerincr,
-                                      callback=self.timerend)
-            
-        self.state[0] = 1
-        super().propagate
+            self.timer=machine.Timer(self.id, mode=machine.Timer.ONE_SHOT,
+                                     period=self.timerdeflen*1000*self.timerincr,
+                                     callback=self.timerend)
 
 
     def timerend(self, timer):
+        self.timeroff()
+#        self.timer = None
+        self.state[3] = 0
+        self.state[0] = 0
+        super().propagate(self)
+
+
+    def timeroff(self):
+        if self.timer is not None:
+            self.timer.deinit()
         self.timer = None
         self.timerincr = 0
-        self.state[0] = 0
-        super().propagate
+        self.state[2] = 0
+
 
 if __name__ == '__main__':
-    but1 =  KnovaDispatcher({'name':'but1', 'type':'pushbutton','pin':4,
-    'connectto':['sw1']})
-    but2 =  KnovaDispatcher({'name':'but2', 'type':'pushbutton','pin':5,
-    'connectto':['sw2']})
-    but3 =  KnovaDispatcher({'name':'but3', 'type':'onoffbutton','pin':19,
-    'connectto':['sw3']})
-    sw1 = KnovaToggleSwitch({'name':'sw1', 'type':'timedswitch','pin':19,
-    'connectto':['l1']})
-    sw2 = KnovaToggleSwitch({'name':'sw2', 'type':'togglewitch','pin':19,
-    'connectto':['l2']})
-    sw3 = KnovaToggleSwitch({'name':'sw3', 'type':'onoffswitch','pin':19,
-    'connectto':['l2']})
-    l1 = KnovaDigitalOut({'name':'l1', 'type':'digitalout','pin':12})
-    l1 = KnovaDigitalOut({'name':'l2', 'type':'digitalout','pin':27})
+    but1 =  KnovaDispatcher({'name':'but1', 'type':'pushbutton','pin':4,})
+    but2 =  KnovaDispatcher({'name':'but2', 'type':'pushbutton','pin':5,})
+    but3 =  KnovaDispatcher({'name':'but3', 'type':'onoffbutton','pin':19})
+    sw1 = KnovaToggleSwitch({'name':'sw1', 'type':'timedswitch',
+                             'upstreamconn':['but1']})
+    sw2 = KnovaToggleSwitch({'name':'sw2', 'type':'togglewitch',
+                             'upstreamconn':['but2']})
+    sw3 = KnovaToggleSwitch({'name':'sw3', 'type':'onoffswitch',
+                             'upstreamconn':['but3']})
+    l1 = KnovaDigitalOut({'name':'l1', 'type':'digitalout','pin':12,
+                          'upstreamconn':['sw1']})
+    l2 = KnovaDigitalOut({'name':'l2', 'type':'digitalout','pin':27,
+                          'upstreamconn':['sw2']})
 
-    but1.connect()
-    but2.connect()
-    but3.connect()
+
+    KnovaTool.connectall()
 
     but1.activate()
     but2.activate()
