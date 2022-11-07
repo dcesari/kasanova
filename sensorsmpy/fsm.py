@@ -39,7 +39,8 @@ class KnovaTool:
         self.name = conf["name"]
         self.typ = conf["type"]
         self.id = len(KnovaTool.unitlist) # unique progressive id
-        self.connectedto = conf.get("connectedto",[])
+        self.upstreamconn = conf.get("upstreamconn",[])
+        self.connected = False
         self.ins = []
         self.outs = []
         self.filterms = conf.get("filterms", -1) # >0 to enable debounce filter
@@ -50,14 +51,16 @@ class KnovaTool:
         self.web = conf.get("web", False)
         KnovaTool.unitlist[self.name] = self
 
-    def connect(self, origin=None):
-        # detect upstream units
-        if origin is not None:
-            self.ins.append(origin)
-        # detect downstream units and call their connect method in cascade
-        for u in self.connectedto:
-            self.outs.append(KnovaTool.unitlist[u])
-            KnovaTool.unitlist[u].connect(self)
+    def connect(self, downstream=None):
+        # store downstream units
+        if downstream is not None:
+            self.ins.append(downstream)
+        # detect upstream units and call their connect method in cascade once
+        if not self.connected:
+            for u in self.upstreamconn:
+                self.ins.append(KnovaTool.unitlist[u])
+                KnovaTool.unitlist[u].connect(downstream=self)
+        self.connected = True
 
     def propagate(self):
         for out in self.outs:
@@ -94,12 +97,12 @@ class KnovaPushButton(KnovaTool):
         self.state[0] = 0
 
 
-    def connect(self, origin=None):
-        super().connect(origin) # call base connect method
-        if self.web: # connect to web server
+    def connect(self, downstream=None):
+        if self.web and not self.connected: # connect to web server once
             KnovaTool.unitlist["web"].register((self.name,"get"), self.getstate)
             KnovaTool.unitlist["web"].register((self.name,"set","pushrelease"), self.push)
         # schedule self.initdelay activate or activate suddendly?
+        super().connect(downstream) # call base connect method
 
 
     def activate(self):
@@ -131,13 +134,13 @@ class KnovaOnOffButton(KnovaTool):
         self.state[0] = self.defaultstate
 
 
-    def connect(self, origin=None):
-        super().connect(origin) # call base connect method
-        if self.web: # connect to web server
+    def connect(self, downstream=None):
+        if self.web and not self.connected: # connect to web server once
             KnovaTool.unitlist["web"].register((self.name,"get"), self.getstate)
 #            KnovaTool.unitlist["web"].register((self.name,"set","on"), self.on)
 #            KnovaTool.unitlist["web"].register((self.name,"set","off"), self.off)
         # schedule self.initdelay activate or activate suddendly?
+        super().connect(downstream) # call base connect method
 
     def activate(self):
         self.propagate() # required?
@@ -176,10 +179,10 @@ class KnovaDigitalOut(KnovaTool):
         self.state[0] = self.defaultstate
 
 
-    def connect(self, origin=None):
-        super().connect(origin)
-        if self.web:
+    def connect(self, downstream=None):
+        if self.web and not self.connected: # connect to web server once
             KnovaTool.unitlist["web"].register((self.name,"get"), self.getstate)
+        super().connect(downstream) # call base connect method
 
 
     def propagate(self):
@@ -199,11 +202,8 @@ class KnovaToggleSwitch(KnovaTool):
         self.state[3] = self.defaultstate
 
 
-    def connect(self, origin=None): #, unitlist):
-        KnovaTool.connect(origin) # call base connect method
-        if len(ins) > 0: self.state[1] = 0 # automatic
-        else: self.state[1] = 1 # manual
-        if self.web: # connect to web server
+    def connect(self, downstream=None): #, unitlist):
+        if self.web and not self.connected: # connect to web server once
             KnovaTool.unitlist["web"].register((self.name,"set","on"), self.onman)
             KnovaTool.unitlist["web"].register((self.name,"set","ontimer"), self.ontimer)
             KnovaTool.unitlist["web"].register((self.name,"set","off"), self.offman)
@@ -212,6 +212,9 @@ class KnovaToggleSwitch(KnovaTool):
             KnovaTool.unitlist["web"].register((self.name,"set","auto"), self.noman)
             KnovaTool.unitlist["web"].register((self.name,"set","man"), self.man)
             KnovaTool.unitlist["web"].register((self.name,"get"), self.getstate)
+        KnovaTool.connect(downstream) # call base connect method
+        if len(ins) > 0: self.state[1] = 0 # automatic
+        else: self.state[1] = 1 # manual
             
 
     def setman(self, req, qs):
@@ -267,11 +270,8 @@ class KnovaOnOffSwitch(KnovaTool):
         self.timer = None
 
 
-    def connect(self, origin=None): #, unitlist):
-        KnovaTool.connect(origin) # call base connect method
-        if len(ins) > 0: self.state[1] = 0 # automatic
-        else: self.state[1] = 1 # manual
-        if self.web: # connect to web server
+    def connect(self, downstream=None): #, unitlist):
+        if self.web and not self.connected: # connect to web server once
             KnovaTool.unitlist["web"].register((self.name,"set","on"), self.onman)
             KnovaTool.unitlist["web"].register((self.name,"set","ontimer"), self.ontimer)
             KnovaTool.unitlist["web"].register((self.name,"set","off"), self.offman)
@@ -280,6 +280,9 @@ class KnovaOnOffSwitch(KnovaTool):
             KnovaTool.unitlist["web"].register((self.name,"set","auto"), self.noman)
             KnovaTool.unitlist["web"].register((self.name,"set","man"), self.man)
             KnovaTool.unitlist["web"].register((self.name,"get"), self.getstate)
+        super().connect(downstream) # call base connect method
+        if len(ins) > 0: self.state[1] = 0 # automatic
+        else: self.state[1] = 1 # manual
             
 
     def setman(self, req, qs):
@@ -398,11 +401,8 @@ class KnovaTimedSwitch(KnovaTool):
         self.timerincr = 0
 
 
-    def connect(self, origin=None): #, unitlist):
-        KnovaTool.connect(origin) # call base connect method
-        if len(ins) > 0: self.state[1] = 0 # automatic
-        else: self.state[1] = 1 # manual
-        if self.web: # connect to web server
+    def connect(self, downstream=None): #, unitlist):
+        if self.web and not self.connected: # connect to web server once
             KnovaTool.unitlist["web"].register((self.name,"set","on"), self.onman)
             KnovaTool.unitlist["web"].register((self.name,"set","ontimer"), self.ontimer)
             KnovaTool.unitlist["web"].register((self.name,"set","off"), self.offman)
@@ -411,6 +411,9 @@ class KnovaTimedSwitch(KnovaTool):
             KnovaTool.unitlist["web"].register((self.name,"set","auto"), self.noman)
             KnovaTool.unitlist["web"].register((self.name,"set","man"), self.man)
             KnovaTool.unitlist["web"].register((self.name,"get"), self.getstate)
+        super().connect(downstream) # call base connect method
+        if len(ins) > 0: self.state[1] = 0 # automatic
+        else: self.state[1] = 1 # manual
             
 
     def setman(self, req, qs):
