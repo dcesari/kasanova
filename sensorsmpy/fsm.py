@@ -71,7 +71,7 @@ class KnovaTool:
 
     def propagate(self, origin):
         for out in self.outs:
-            out.propagate(self)
+            out.propagate(self, origin)
 
     def noisefilter(self):
         if self.filterms > 0:
@@ -234,10 +234,11 @@ class KnovaToggleSwitch(KnovaTool):
 #            KnovaTool.unitlist["web"].register((self.name,"set","offtimer"), self.offtimer)
             KnovaTool.unitlist["web"].register((self.name,"set","toggle"), self.toggleman)
             KnovaTool.unitlist["web"].register((self.name,"get"), self.getstate)
-        if len(ins) > 0:
+        if len(self.ins) > 0:
             self.state[1] = 0 # automatic
-            KnovaTool.unitlist["web"].register((self.name,"set","auto"), self.setauto)
-            KnovaTool.unitlist["web"].register((self.name,"set","man"), self.setman)
+            if self.web:
+                KnovaTool.unitlist["web"].register((self.name,"set","auto"), self.setauto)
+                KnovaTool.unitlist["web"].register((self.name,"set","man"), self.setman)
 
         else:
             self.state[1] = 1 # manual
@@ -299,10 +300,11 @@ class KnovaOnOffSwitch(KnovaTool):
             KnovaTool.unitlist["web"].register((self.name,"set","offtimer"), self.offtimer)
             KnovaTool.unitlist["web"].register((self.name,"set","toggle"), self.toggleman)
             KnovaTool.unitlist["web"].register((self.name,"get"), self.getstate)
-        if len(ins) > 0:
+        if len(self.ins) > 0:
             self.state[1] = 0 # automatic
-            KnovaTool.unitlist["web"].register((self.name,"set","auto"), self.setauto)
-            KnovaTool.unitlist["web"].register((self.name,"set","man"), self.setman)
+            if self.web:
+                KnovaTool.unitlist["web"].register((self.name,"set","auto"), self.setauto)
+                KnovaTool.unitlist["web"].register((self.name,"set","man"), self.setman)
         else:
             self.state[1] = 1 # manual
             
@@ -421,10 +423,11 @@ class KnovaTimedSwitch(KnovaTool):
 #            KnovaTool.unitlist["web"].register((self.name,"set","offtimer"), self.offtimer)
             KnovaTool.unitlist["web"].register((self.name,"set","toggle"), self.toggleman)
             KnovaTool.unitlist["web"].register((self.name,"get"), self.getstate)
-        if len(ins) > 0:
+        if len(self.ins) > 0:
             self.state[1] = 0 # automatic
-            KnovaTool.unitlist["web"].register((self.name,"set","auto"), self.setauto)
-            KnovaTool.unitlist["web"].register((self.name,"set","man"), self.setman)
+            if self.web:
+                KnovaTool.unitlist["web"].register((self.name,"set","auto"), self.setauto)
+                KnovaTool.unitlist["web"].register((self.name,"set","man"), self.setman)
         else:
             self.state[1] = 1 # manual
             
@@ -512,16 +515,18 @@ if __name__ == '__main__':
     but1 =  KnovaDispatcher({'name':'but1', 'type':'pushbutton','pin':4,})
     but2 =  KnovaDispatcher({'name':'but2', 'type':'pushbutton','pin':5,})
     but3 =  KnovaDispatcher({'name':'but3', 'type':'onoffbutton','pin':19})
-    sw1 = KnovaToggleSwitch({'name':'sw1', 'type':'timedswitch',
+    sw1 = KnovaTimedSwitch({'name':'sw1', 'type':'timedswitch',
                              'upstreamconn':['but1']})
     sw2 = KnovaToggleSwitch({'name':'sw2', 'type':'togglewitch',
                              'upstreamconn':['but2']})
-    sw3 = KnovaToggleSwitch({'name':'sw3', 'type':'onoffswitch',
+    sw3 = KnovaOnOffSwitch({'name':'sw3', 'type':'onoffswitch',
                              'upstreamconn':['but3']})
     l1 = KnovaDigitalOut({'name':'l1', 'type':'digitalout','pin':12,
                           'upstreamconn':['sw1']})
-    l2 = KnovaDigitalOut({'name':'l2', 'type':'digitalout','pin':27,
+    l2 = KnovaDigitalOut({'name':'l2', 'type':'digitalout','pin':14,
                           'upstreamconn':['sw2']})
+    l2 = KnovaDigitalOut({'name':'l3', 'type':'digitalout','pin':27,
+                          'upstreamconn':['sw3']})
 
 
     KnovaTool.connectall()
