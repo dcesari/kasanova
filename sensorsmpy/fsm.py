@@ -32,7 +32,7 @@ class KnovaTool:
         self.upstreamconn = conf.get("upstreamconn",[])
         self.ins = []
         self.outs = []
-        self.filterms = conf.get("filterms", -1) # >0 to enable debounce filter
+        self.filterms = conf.get("filterms", 400) # >0 to enable debounce filter
         if self.filterms > 0:
             self.filters = math.ceil(self.filterms/1000) # for wrap check
             self.lastevent = time.ticks_ms()
@@ -69,7 +69,7 @@ class KnovaTool:
 
     def propagate(self, origin):
         for out in self.outs:
-            out.propagate(self, origin)
+            out.propagate(self)
 
     def noisefilter(self):
         if self.filterms > 0:
@@ -95,7 +95,7 @@ class KnovaPushButton(KnovaTool):
         super().__init__(conf)
         self.pushtype = conf.get("pushtype", "push") # push or release
         self.invert = conf.get("invert", False)
-        self.pin = machine.Pin(conf["pin"], mode=machine.Pin.IN) #...
+        self.pin = machine.Pin(conf["pin"], mode=machine.Pin.IN, pull=machine.Pin.PULL_UP) #...
         self.initdelay = conf.get("initdelay", 0)
 
         self.state = bytearray(2)
@@ -121,7 +121,7 @@ class KnovaPushButton(KnovaTool):
 
 
     def startpropagate(self, state):
-        super().propagate(self)
+        super().propagate(None)
 
     def push(self, pin):
         if self.state[1] == 1:
@@ -132,7 +132,7 @@ class KnovaPushButton(KnovaTool):
 
     def pushweb(self):
         if self.state[1] == 1:
-            super().propagate(self)
+            super().propagate(None)
         return 0
 
     def enable(self):
@@ -148,7 +148,7 @@ class KnovaOnOffButton(KnovaTool):
     def __init__(self, conf):
         super().__init__(conf)
         self.invert = conf.get("invert", False)
-        self.pin = machine.Pin(conf["pin"], mode=machine.Pin.IN) #...
+        self.pin = machine.Pin(conf["pin"], mode=machine.Pin.IN, pull=machine.Pin.PULL_UP) #...
         self.defaultstate = conf.get("defaultstate", 0)
         self.initdelay = conf.get("initdelay", 0)
 
@@ -177,7 +177,7 @@ class KnovaOnOffButton(KnovaTool):
         # self.pin.value() is ignored due to noise filter, trust sign of irq service
         # schedule a state refresh after self.filterms???
         self.state[0] = state != self.invert
-        super().propagate(self)
+        super().propagate(None)
 
     def on(self, pin):
         if self.noisefilter(): return
@@ -191,7 +191,7 @@ class KnovaOnOffButton(KnovaTool):
 class KnovaToggleSwitch(KnovaTool):
     def __init__(self, conf):
         super().__init__(conf)
-        self.timerdeflen = conf.get("timerdeflen", 60)
+        self.timerduration = conf.get("timerduration", 60)
         self.defaultstate = conf.get("defaultstate", 0)
         self.state = bytearray(4) # out, man, out timer, auto out
         self.state[2] = 0 # output by timer off
@@ -231,17 +231,17 @@ class KnovaToggleSwitch(KnovaTool):
 
     def onman(self, req, qs):
         self.state[0] = 1
-        super().propagate(self)
+        super().propagate(None)
         return 0
 
     def offman(self, req, qs):
         self.state[0] = 0
-        super().propagate(self)
+        super().propagate(None)
         return 0
 
     def toggleman(self, req, qs):
         self.state[0] = 1 - self.state[0]
-        super().propagate(self)
+        super().propagate(None)
         return 0
 
     def propagate(self, origin):
@@ -249,19 +249,20 @@ class KnovaToggleSwitch(KnovaTool):
         # if inp.state[0] == 1:
         self.state[3] = 1 - self.state[3]
         self.state[0] = self.state[3]
-        super().propagate(self)
+        super().propagate(origin)
 
 
 class KnovaTimedSwitch(KnovaTool):
     def __init__(self, conf):
         super().__init__(conf)
-        self.timerdeflen = conf.get("timerdeflen", 60)
+        self.timerduration = conf.get("timerduration", 60)
+        self.timermode = "restart"
         self.defaultstate = 0 # conf.get("defaultstate", 0)
         self.state = bytearray(4) # out, man, out timer, auto out
         self.state[2] = 0 # output by timer off
         self.state[0] = self.defaultstate
         self.state[3] = self.defaultstate
-        self.timer = None
+        self.timer = machine.Timer(-1)
         self.timerincr = 0
 
 
@@ -293,55 +294,55 @@ class KnovaTimedSwitch(KnovaTool):
         self.state[1] = 0
         self.state[3] = self.defaultstate
         self.state[0] = self.defaultstate
-        super().propagate(self)
+        super().propagate(None)
         return 0
 
     def onman(self, req, qs):
         self.timeroff()
         self.state[0] = 1
-        super().propagate(self)
+        super().propagate(None)
         return 0
 
     def offman(self, req, qs):
         self.timeroff()
         self.state[0] = 0
-        super().propagate(self)
+        super().propagate(None)
         return 0
 
     def toggleman(self, req, qs):
         self.timeroff()
         self.state[0] = 1 - self.state[0]
-        super().propagate(self)
+        super().propagate(None)
         return 0
 
 
-    def propagate(self):
+    def propagate(self, origin):
         if self.state[1] == 1: return # do not update neither propagate in manual state
         self.state[3] = 1
         self.state[0] = 1
         self.state[2] = 1
-        super().propagate(self)
+        super().propagate(origin)
         # schedule timer after setting the state, to avoid
         # self.timerend being called before end of propagate
         if self.timermode == "restart":
             if self.timer is not None:
                 self.timer.deinit()
-            self.timer=machine.Timer(self.id, mode=machine.Timer.ONE_SHOT,
-                                     period=self.timerdeflen*1000,
-                                     callback=self.timerend)
+                self.timer.init(mode=machine.Timer.ONE_SHOT,
+                                period=self.timerduration*1000,
+                                callback=self.timerend)
         elif self.timermode == "ignore":
             if self.timer is not None:
                 return
-            self.timer=machine.Timer(self.id, mode=machine.Timer.ONE_SHOT,
-                                     period=self.timerdeflen*1000,
-                                     callback=self.timerend)
+            self.timer.init(mode=machine.Timer.ONE_SHOT,
+                            period=self.timerduration*1000,
+                            callback=self.timerend)
         elif self.timermode == "increment":
             if self.timer is not None:
                 self.timer.deinit()
             self.timerincr +=1
-            self.timer=machine.Timer(self.id, mode=machine.Timer.ONE_SHOT,
-                                     period=self.timerdeflen*1000*self.timerincr,
-                                     callback=self.timerend)
+            self.timer.init(mode=machine.Timer.ONE_SHOT,
+                            period=self.timerduration*1000*self.timerincr,
+                            callback=self.timerend)
 
 
     def timerend(self, timer):
@@ -351,7 +352,7 @@ class KnovaTimedSwitch(KnovaTool):
         self.timeroff()
         self.state[3] = 0
         self.state[0] = 0
-        super().propagate(self)
+        super().propagate(None)
 
 
     def timeroff(self):
@@ -366,7 +367,7 @@ class KnovaOnOffSwitch(KnovaTool):
     def __init__(self, conf):
         super().__init__(conf)
         self.inputop = conf.get("inputop", "or")
-        self.timerdeflen = conf.get("timerdeflen", 60)
+        self.timerduration = conf.get("timerduration", 60)
         self.defaultstate = conf.get("defaultstate", 0)
         self.state = bytearray(4) # out, man, out timer, auto out
         self.state[2] = 0 # output by timer off
@@ -402,29 +403,29 @@ class KnovaOnOffSwitch(KnovaTool):
         self.timeroff()
         self.state[1] = 0
         self.state[0] = self.state[3] # set state to automatic state which was updated in background
-        super().propagate(self)
+        super().propagate(None)
         return 0
 
     def onman(self, req, qs): # does this make sense without setting state[1] == 1?
         self.timeroff()
         self.state[0] = 1
-        super().propagate(self)
+        super().propagate(None)
         return 0
 
     def offman(self, req, qs):
         self.timeroff()
         self.state[0] = 0
-        super().propagate(self)
+        super().propagate(None)
         return 0
 
     def toggleman(self, req, qs):
         self.timeroff()
         self.state[0] = 1 - self.state[0]
-        super().propagate(self)
+        super().propagate(None)
         return 0
 
 
-    def propagate(self):
+    def propagate(self, origin):
         if self.inputop == "and":
             self.state[3] = 1
             for inp in self.ins:
@@ -439,16 +440,16 @@ class KnovaOnOffSwitch(KnovaTool):
                 self.state[3] = self.state[3] != inp.state[0]
         if self.state[1] == 0:
             self.state[0] = self.state[3]
-        super().propagate(self)
+        super().propagate(origin)
 
 
     def ontimer(self, req, qs):
         self.timeroff()
         self.state[0] = 1
-        super().propagate(self)
+        super().propagate(None)
         # get period from qs
         self.timer = machine.Timer(self.id, mode=machine.Timer.ONE_SHOT,
-                                   period=self.timerdeflen,
+                                   period=self.timerduration,
                                    callback=self.ontimerend)
         return 0
 
@@ -458,10 +459,10 @@ class KnovaOnOffSwitch(KnovaTool):
     def offtimer(self, req, qs):
         self.timeroff()
         self.state[0] = 0
-        super().propagate(self)
+        super().propagate(None)
         # get period from qs
         self.timer = machine.Timer(self.id, mode=machine.Timer.ONE_SHOT,
-                                   period=self.timerdeflen,
+                                   period=self.timerduration,
                                    callback=self.offtimerend)
         return 0
 
@@ -474,7 +475,7 @@ class KnovaOnOffSwitch(KnovaTool):
             self.state[0] = self.state[3]
         else:# man
             self.state[0] = state
-        super().propagate(self)
+        super().propagate(None)
 
 
     def timeroff(self):
@@ -511,9 +512,10 @@ class KnovaDigitalOut(KnovaTool):
 
 
 if __name__ == '__main__':
-    but1 =  KnovaDispatcher({'name':'but1', 'type':'pushbutton','pin':4,})
-    but2 =  KnovaDispatcher({'name':'but2', 'type':'pushbutton','pin':5,})
-    but3 =  KnovaDispatcher({'name':'but3', 'type':'onoffbutton','pin':19})
+    but1 =  KnovaDispatcher({'name':'but1', 'type':'pushbutton','pin':4})
+    but2 =  KnovaDispatcher({'name':'but2', 'type':'pushbutton','pin':5})
+    but3 =  KnovaDispatcher({'name':'but3', 'type':'onoffbutton','pin':19,
+                             'invert':True})
     sw1 = KnovaTimedSwitch({'name':'sw1', 'type':'timedswitch',
                              'upstreamconn':['but1']})
     sw2 = KnovaToggleSwitch({'name':'sw2', 'type':'togglewitch',
