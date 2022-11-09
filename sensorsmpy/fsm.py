@@ -77,7 +77,7 @@ class KnovaTool:
         if self.filterms > 0:
             now = time.ticks_ms()
             nownw = time.time() # wrap check
-            if time.ticks_diff(now - self.lastevent) < self.filterms and \
+            if time.ticks_diff(now, self.lastevent) < self.filterms and \
                nownw - self.lasteventnw < self.filters: return True # too early, do nothing
             self.lastevent = now
             self.lasteventnw = nownw
@@ -123,12 +123,12 @@ class KnovaPushButton(KnovaTool):
 
 
     def startpropagate(self, state):
-        if self.noisefilter(): return
         super().propagate(self)
 
     def push(self, pin):
         if self.state[1] == 1:
             self.state[0] = 1 # will never change after first pushrelease?!
+            if self.noisefilter(): return
             micropython.schedule(self.startpropagate, 1)
 
 
@@ -176,16 +176,17 @@ class KnovaOnOffButton(KnovaTool):
         
 
     def startpropagate(self, state):
-        if self.noisefilter(): return
         # self.pin.value() is ignored due to noise filter, trust sign of irq service
         # schedule a state refresh after self.filterms???
         self.state[0] = state != self.invert
         super().propagate(self)
 
     def on(self, pin):
+        if self.noisefilter(): return
         micropython.schedule(self.startpropagate, 1)
 
     def off(self, pin):
+        if self.noisefilter(): return
         micropython.schedule(self.startpropagate, 0)
 
 
