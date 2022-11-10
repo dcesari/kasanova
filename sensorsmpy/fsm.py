@@ -93,11 +93,11 @@ class KnovaTool:
 
     def gettimer():
         # class method for getting an available global timer
-        t = machine.Timer(KnovaTool.timercount)
-        KnovaTool.timercount += 1 # check not to exceed (max 3)
         if KnovaTool.timercount > 3:
             raise
-
+        t = machine.Timer(KnovaTool.timercount)
+        KnovaTool.timercount += 1 # check not to exceed (max 3)
+        return t
 
 class KnovaPushButton(KnovaTool):
     def __init__(self, conf):
@@ -529,7 +529,7 @@ if __name__ == '__main__':
     but3 =  KnovaDispatcher({'name':'but3', 'type':'onoffbutton','pin':19,
                              'invert':True})
     sw1 = KnovaTimedSwitch({'name':'sw1', 'type':'timedswitch',
-                             'upstreamconn':['but1']})
+                             'timerduration':5, 'upstreamconn':['but1']})
     sw2 = KnovaToggleSwitch({'name':'sw2', 'type':'togglewitch',
                              'upstreamconn':['but2']})
     sw3 = KnovaOnOffSwitch({'name':'sw3', 'type':'onoffswitch',
