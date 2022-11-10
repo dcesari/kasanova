@@ -24,6 +24,7 @@ def KnovaDispatcher(conf):
 
 class KnovaTool:
     unitlist = {}
+    timercount = 1 # reserve timer n.0 for main loop
 
     def __init__(self, conf):
         self.name = conf["name"]
@@ -88,6 +89,14 @@ class KnovaTool:
             state[i] = n
             i = i + 1
         return state
+
+
+    def gettimer():
+        # class method for getting an available global timer
+        t = machine.Timer(KnovaTool.timercount)
+        KnovaTool.timercount += 1 # check not to exceed (max 3)
+        if KnovaTool.timercount > 3:
+            raise
 
 
 class KnovaPushButton(KnovaTool):
@@ -262,7 +271,7 @@ class KnovaTimedSwitch(KnovaTool):
         self.state[2] = 0 # output by timer off
         self.state[0] = self.defaultstate
         self.state[3] = self.defaultstate
-        self.timer = machine.Timer(-1)
+        self.timer = KnovaTool.gettimer()
         self.timerincr = 0
 
 
@@ -320,45 +329,44 @@ class KnovaTimedSwitch(KnovaTool):
         if self.state[1] == 1: return # do not update neither propagate in manual state
         self.state[3] = 1
         self.state[0] = 1
-        self.state[2] = 1
         super().propagate(origin)
         # schedule timer after setting the state, to avoid
         # self.timerend being called before end of propagate
         if self.timermode == "restart":
-            if self.timer is not None:
-                self.timer.deinit()
-                self.timer.init(mode=machine.Timer.ONE_SHOT,
-                                period=self.timerduration*1000,
-                                callback=self.timerend)
+            self.timer.deinit()
+            self.state[2] = 1
+            self.timer.init(mode=machine.Timer.ONE_SHOT,
+                            period=self.timerduration*1000,
+                            callback=self.timerend)
         elif self.timermode == "ignore":
-            if self.timer is not None:
+            if self.state[2] == 1:
                 return
+            self.state[2] = 1
             self.timer.init(mode=machine.Timer.ONE_SHOT,
                             period=self.timerduration*1000,
                             callback=self.timerend)
         elif self.timermode == "increment":
-            if self.timer is not None:
-                self.timer.deinit()
+            self.timer.deinit()
             self.timerincr +=1
+            self.state[2] = 1
             self.timer.init(mode=machine.Timer.ONE_SHOT,
                             period=self.timerduration*1000*self.timerincr,
                             callback=self.timerend)
 
 
     def timerend(self, timer):
+        self.timerincr = 0
+        self.state[0] = 0
+        self.state[2] = 0
+        self.state[3] = 0
         micropython.schedule(self.mptimerend, 0)
 
     def mptimerend(self, state):
-        self.timeroff()
-        self.state[3] = 0
-        self.state[0] = 0
         super().propagate(None)
 
 
     def timeroff(self):
-        if self.timer is not None:
-            self.timer.deinit()
-        self.timer = None
+        self.timer.deinit()
         self.timerincr = 0
         self.state[2] = 0
 
@@ -373,7 +381,7 @@ class KnovaOnOffSwitch(KnovaTool):
         self.state[2] = 0 # output by timer off
         self.state[0] = self.defaultstate
         self.state[3] = self.defaultstate
-        self.timer = None
+        self.timer = KnovaTool.gettimer()
 
 
     def connect(self):
@@ -447,42 +455,46 @@ class KnovaOnOffSwitch(KnovaTool):
         self.timeroff()
         self.state[0] = 1
         super().propagate(None)
+        self.state[2] = 1
         # get period from qs
-        self.timer = machine.Timer(self.id, mode=machine.Timer.ONE_SHOT,
-                                   period=self.timerduration,
-                                   callback=self.ontimerend)
+        self.timer.init(mode=machine.Timer.ONE_SHOT,
+                        period=self.timerduration*1000,
+                        callback=self.ontimerend)
         return 0
 
     def ontimerend(self, timer):
-        micropython.schedule(self.mptimerend, 1)
+        self.state[2] = 0
+        if self.state[1] == 0: # auto
+            self.state[0] = self.state[3]
+        else: # man
+            self.state[0] = 0
+        micropython.schedule(self.mptimerend, 0)
 
     def offtimer(self, req, qs):
         self.timeroff()
         self.state[0] = 0
         super().propagate(None)
+        self.state[2] = 1
         # get period from qs
-        self.timer = machine.Timer(self.id, mode=machine.Timer.ONE_SHOT,
-                                   period=self.timerduration,
-                                   callback=self.offtimerend)
+        self.timer.init(mode=machine.Timer.ONE_SHOT,
+                        period=self.timerduration*1000,
+                        callback=self.offtimerend)
         return 0
 
     def offtimerend(self):
-        micropython.schedule(self.mptimerend, 0)
-
-    def mptimerend(self, state):
-        self.timeroff()
+        self.state[2] = 0
         if self.state[1] == 0: # auto
             self.state[0] = self.state[3]
         else:# man
-            self.state[0] = state
+            self.state[0] = 1
+        micropython.schedule(self.mptimerend, 1)
+
+    def mptimerend(self, state):
         super().propagate(None)
 
 
     def timeroff(self):
-        if self.timer is not None:
-            self.timer.deinit()
-        self.timer = None
-        self.timerincr = 0
+        self.timer.deinit()
         self.state[2] = 0
 
  
