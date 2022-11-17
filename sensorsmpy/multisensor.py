@@ -88,7 +88,7 @@ class KNovaWebServer:
             htcode = '400'
             response = htmle % (htcode,)
             print(response)
-        cl.send(b'HTTP/1.0 '+htcode+' OK\r\nContent-type: text/html\r\n\r\n')
+        cl.send(b'HTTP/1.0 '+htcode+' OK\r\nContent-type: text/html\r\nConnection: close\r\n\r\n')
         r = bytes(response,"ascii")
         print(r)
         cl.send(r)
