@@ -212,11 +212,6 @@ class KnovaOwBus(KnovaTool):
         self.ow = onewire.OneWire(self.pin) # create a OneWire bus
         # ow.scan() # return a list of devices on the bus
         self.ow.reset() # reset the bus
-        # self.state = bytearray(2)
-        # self.state[0] = 0
-
-    def connect(self):
-        super().connect() # call base connect method
 
 
     def activate(self):
