@@ -72,6 +72,11 @@ class KnovaTool:
         for out in self.outs:
             out.propagate(self)
 
+    def periodicupdate(self):
+        # do nothing if not overridden
+        return
+
+
     def noisefilter(self):
         if self.filterms > 0:
             now = time.ticks_ms()
@@ -195,6 +200,57 @@ class KnovaOnOffButton(KnovaTool):
     def off(self, pin):
         if self.noisefilter(): return
         micropython.schedule(self.startpropagate, 0)
+
+
+class KnovaOwBus(KnovaTool):
+    def __init__(self, conf):
+        super().__init__(conf)
+        self.pin = machine.Pin(conf["pin"], mode=machine.Pin.IN, pull=machine.Pin.PULL_UP) #...
+        self.initdelay = conf.get("initdelay", 0)
+        self.updateperiod = conf.get("updateperiod", 600)
+
+        self.ow = onewire.OneWire(self.pin) # create a OneWire bus
+        # ow.scan() # return a list of devices on the bus
+        self.ow.reset() # reset the bus
+        # self.state = bytearray(2)
+        # self.state[0] = 0
+
+    def connect(self):
+        super().connect() # call base connect method
+
+
+    def activate(self):
+        self.thermo = None
+        for out in self.outs:
+            if isinstance(out, KnovaOwThermometer):
+                self.thermo = ds18x20.DS18X20(self.ow)
+                # roms = ds.scan()
+                break
+        # (updateperiod)...
+
+    def periodicupdate(self):
+        if self.thermo is not None:
+            self.thermo.convert_temp()
+            time.sleep_ms(750)
+        super().propagate(None)
+
+
+class KnovaOwThermometer(KnovaTool):
+    def __init__(self, conf):
+        super().__init__(conf)
+        self.romid = conf["romid"]
+        self.state = array.array("f",(-10000.,))
+        # self.state[0] = 0
+        # self.state[1] = 1 # start enabled
+
+    def connect(self):
+        super().connect() # call base connect method
+
+
+    def propagate(self, origin):
+        self.state[0] = origin.thermo.read_temp(self.romid)
+        self.lastevent = time.time()
+        super().propagate(origin)
 
 
 class KnovaToggleSwitch(KnovaTool):
