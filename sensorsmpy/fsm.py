@@ -22,6 +22,17 @@ def KnovaDispatcher(conf):
     return None
 
 
+class KnovaLPTimer:
+    timerlist = []
+
+    def addsingletimer(delta, cb):
+        abstime = time.time() + delta # or we receive abs time?
+        n = 0
+        for n in range(len(timerlist)):
+            if abstime < timerlist[n][0]: break
+        timerlist.insert(n, (abstime, cb))
+
+
 class KnovaTool:
     unitlist = {}
     timercount = 1 # reserve timer n.0 for main loop
