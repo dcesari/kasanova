@@ -23,14 +23,36 @@ def KnovaDispatcher(conf):
 
 
 class KnovaLPTimer:
-    timerlist = []
+    rtlist = []
+    ptlist = []
+    prec = 1
 
-    def addsingletimer(delta, cb):
+    def addsingletimer(delta, cb, period=0):
         abstime = time.time() + delta # or we receive abs time?
         n = 0
         for n in range(len(timerlist)):
             if abstime < timerlist[n][0]: break
-        timerlist.insert(n, (abstime, cb))
+        KnovaLPTimer.rtlist.insert(n, (abstime, cb, period))
+
+    def addperiodictimer(period, cb):
+        KnovaLPTimer.ptlist.append((0, cb, period))
+        KnovaLPTimer.addsingletimer(period, cb, period)
+
+    def checktimer():
+        now = time.time()
+        do while (True):
+            if len(KnovaLPTimer.rtlist) <= 0 return
+            if abs(KnovaLPTimer.rtlist[0][0] - now) < KnovaLPTimer.prec:
+                KnovaLPTimer.consumetimer()
+            else:
+                return
+
+    def consumetimer():
+        rt = KnovaLPTimer.rtlist[0]
+        del KnovaLPTimer.rtlist[0]
+        # if periodic, schedule next event
+        if rt[2] > 0: KnovaLPTimer.addsingletimer(rt[0], rt[1], rt[2])
+        rt[1]() # call after-timer callback
 
 
 class KnovaTool:
@@ -70,7 +92,10 @@ class KnovaTool:
 
 
     def activate(self):
-        # do nothing if not overridden
+        # init timers, must be done if overridden
+        self.updateperiod = conf.get("updateperiod", 0)
+        if self.updateperiod > 0: # is it acceptable to start timers here?
+            KnovaLPTimer.addperiodictimer(self.updateperiod, self.periodicupdate)
         return
 
     def activateall():
@@ -138,6 +163,7 @@ class KnovaPushButton(KnovaTool):
 
 
     def activate(self):
+        super().activate()
         cond = (self.pushtype == "push") != self.invert
         if cond:
             self.pin.irq(handler=self.push, trigger=machine.Pin.IRQ_RISING)
@@ -188,7 +214,7 @@ class KnovaOnOffButton(KnovaTool):
 
 
     def activate(self):
-#        self.propagate() # required?
+        super().activate()
         if self.invert:
             self.pin.irq(handler=self.on, trigger=machine.Pin.IRQ_FALLING)
             #, priority=1, wake=None, hard=False)
@@ -226,6 +252,7 @@ class KnovaOwBus(KnovaTool):
 
 
     def activate(self):
+        super().activate()
         self.thermo = None
         for out in self.outs:
             if isinstance(out, KnovaOwThermometer):
