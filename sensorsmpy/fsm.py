@@ -26,16 +26,21 @@ class KnovaLPTimer:
     rtlist = []
     ptlist = []
     prec = 1
+    int timerid = 0
 
     def addsingletimer(delta, cb, period=0):
         abstime = time.time() + delta # or we receive abs time?
         n = 0
-        for n in range(len(timerlist)):
-            if abstime < timerlist[n][0]: break
-        KnovaLPTimer.rtlist.insert(n, (abstime, cb, period))
+        for n in range(len(KnovaLPTimer.rtlist)):
+            if abstime < KnovaLPTimer.rtlist[n][0]: break
+        # should we conserve timerid for periodic timers?
+        KnovaLPTimer.rtlist.insert(n, (abstime, cb, period, KnovaLPTimer.timerid))
+        ret = KnovaLPTimer.timerid
+        KnovaLPTimer.timerid += 1
+        return ret
 
     def addperiodictimer(period, cb):
-        KnovaLPTimer.ptlist.append((0, cb, period))
+        KnovaLPTimer.ptlist.append((0, cb, period)) # useful?
         KnovaLPTimer.addsingletimer(period, cb, period)
 
     def checktimer():
@@ -44,15 +49,22 @@ class KnovaLPTimer:
             if len(KnovaLPTimer.rtlist) <= 0 return
             if abs(KnovaLPTimer.rtlist[0][0] - now) < KnovaLPTimer.prec:
                 KnovaLPTimer.consumetimer()
+                now = time.time() # time may have passed in callback
             else:
                 return
 
     def consumetimer():
         rt = KnovaLPTimer.rtlist[0]
-        del KnovaLPTimer.rtlist[0]
+        del KnovaLPTimer.rtlist[0] # rt is not deleted here (empirically)
         # if periodic, schedule next event
         if rt[2] > 0: KnovaLPTimer.addsingletimer(rt[0], rt[1], rt[2])
         rt[1]() # call after-timer callback
+
+    def canceltimer(timerid)
+        for n in range(len(KnovaLPTimer.rtlist)):
+            if KnovaLPTimer.rtlist[n][4] == timerid:
+                del KnovaLPTimer.rtlist[n]
+                return
 
 
 class KnovaTool:
