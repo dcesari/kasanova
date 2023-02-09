@@ -28,48 +28,55 @@ class KnovaLPTimer:
     prec = 1
     int timerid = 0
 
-    def addsingletimer(delta, cb, period=0):
+    def __init__(self):
+        self.rtlist = []
+        self.ptlist = []
+        self.prec = 1
+        int self.timerid = 0
+    
+    def addsingletimer(self, delta, cb, period=0):
         abstime = time.time() + delta # or we receive abs time?
         n = 0
-        for n in range(len(KnovaLPTimer.rtlist)):
-            if abstime < KnovaLPTimer.rtlist[n][0]: break
+        for n in range(len(self.rtlist)):
+            if abstime < self.rtlist[n][0]: break
         # should we conserve timerid for periodic timers?
-        KnovaLPTimer.rtlist.insert(n, (abstime, cb, period, KnovaLPTimer.timerid))
-        ret = KnovaLPTimer.timerid
-        KnovaLPTimer.timerid += 1
+        self.rtlist.insert(n, (abstime, cb, period, self.timerid))
+        ret = self.timerid
+        self.timerid += 1
         return ret
 
-    def addperiodictimer(period, cb):
-        KnovaLPTimer.ptlist.append((0, cb, period)) # useful?
-        KnovaLPTimer.addsingletimer(period, cb, period)
+    def addperiodictimer(self, period, cb):
+        self.ptlist.append((0, cb, period)) # useful?
+        self.addsingletimer(period, cb, period)
 
-    def checktimer():
+    def checktimer(self):
         now = time.time()
         do while (True):
-            if len(KnovaLPTimer.rtlist) <= 0 return
-            if abs(KnovaLPTimer.rtlist[0][0] - now) < KnovaLPTimer.prec:
-                KnovaLPTimer.consumetimer()
+            if len(self.rtlist) <= 0 return
+            if abs(self.rtlist[0][0] - now) < self.prec:
+                self.consumetimer()
                 now = time.time() # time may have passed in callback
             else:
                 return
 
-    def consumetimer():
-        rt = KnovaLPTimer.rtlist[0]
-        del KnovaLPTimer.rtlist[0] # rt is not deleted here (empirically)
+    def consumetimer(self):
+        rt = self.rtlist[0]
+        del self.rtlist[0] # rt is not deleted here (empirically)
         # if periodic, schedule next event
-        if rt[2] > 0: KnovaLPTimer.addsingletimer(rt[0], rt[1], rt[2])
+        if rt[2] > 0: self.addsingletimer(rt[0], rt[1], rt[2])
         rt[1]() # call after-timer callback
 
-    def canceltimer(timerid)
-        for n in range(len(KnovaLPTimer.rtlist)):
-            if KnovaLPTimer.rtlist[n][4] == timerid:
-                del KnovaLPTimer.rtlist[n]
+    def canceltimer(self, timerid)
+        for n in range(len(self.rtlist)):
+            if self.rtlist[n][4] == timerid:
+                del self.rtlist[n]
                 return
 
 
 class KnovaTool:
     unitlist = {}
     timercount = 1 # reserve timer n.0 for main loop
+    lptimer = KnovaLPTimer()
 
     def __init__(self, conf):
         self.name = conf["name"]
@@ -84,7 +91,10 @@ class KnovaTool:
             self.lastevent = time.ticks_ms()
             self.lasteventnw = time.time()
         self.web = conf.get("web", False)
+        self.timer = KnovaTool.lptimer
+
         KnovaTool.unitlist[self.name] = self
+        
 
 
     def connect(self):
@@ -107,7 +117,7 @@ class KnovaTool:
         # init timers, must be done if overridden
         self.updateperiod = conf.get("updateperiod", 0)
         if self.updateperiod > 0: # is it acceptable to start timers here?
-            KnovaLPTimer.addperiodictimer(self.updateperiod, self.periodicupdate)
+            KnovaTool.lptimer.addperiodictimer(self.updateperiod, self.periodicupdate)
         return
 
     def activateall():
@@ -372,7 +382,7 @@ class KnovaTimedSwitch(KnovaTool):
         self.state[2] = 0 # output by timer off
         self.state[0] = self.defaultstate
         self.state[3] = self.defaultstate
-        self.timer = KnovaTool.gettimer()
+#        self.timer = KnovaTool.gettimer()
         self.timerincr = 0
 
 
@@ -434,6 +444,7 @@ class KnovaTimedSwitch(KnovaTool):
         # schedule timer after setting the state, to avoid
         # self.timerend being called before end of propagate
         if self.timermode == "restart":
+            
             self.timer.deinit()
             self.state[2] = 1
             self.timer.init(mode=machine.Timer.ONE_SHOT,
