@@ -34,8 +34,9 @@ class KNovaWebServer:
     def connect(self, unitlist):
         addr = socket.getaddrinfo(self.listenaddr, self.port)[0][-1]
         self.sock = socket.socket()
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sock.bind(addr)
-        self.sock.listen(1)
+        self.sock.listen(5)
         print('listening on', addr)
         self.httpoll = select.poll()
         self.httpoll.register(self.sock, select.POLLIN)
