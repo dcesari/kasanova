@@ -74,6 +74,13 @@ class KnovaLPTimer:
                 del self.rtlist[n]
                 return
 
+class KnovaTimerInstance:
+    def __init__(self, engine, delta, cb, period=0):
+        self.engine = engine
+        self.id = engine.addtimer(delta, cb, period)
+
+    def __delete__(self):
+        engine.canceltimer(self.id)
 
 class KnovaTool:
     unitlist = {}
