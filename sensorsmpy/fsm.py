@@ -34,7 +34,7 @@ class KnovaLPTimer:
         self.prec = 1
         int self.timerid = 0
     
-    def addsingletimer(self, delta, cb, period=0):
+    def addtimer(self, delta, cb, period=0):
         abstime = time.time() + delta # or we receive abs time?
         n = 0
         for n in range(len(self.rtlist)):
@@ -48,7 +48,7 @@ class KnovaLPTimer:
 
     def addperiodictimer(self, period, cb):
         self.ptlist.append((0, cb, period)) # useful?
-        self.addsingletimer(period, cb, period)
+        self.addtimer(period, cb, period)
 
     def checktimer(self):
         now = time.time()
@@ -64,7 +64,7 @@ class KnovaLPTimer:
         rt = self.rtlist[0]
         del self.rtlist[0] # rt is not deleted here (empirically)
         # if periodic, schedule next event
-        if rt[2] > 0: self.addsingletimer(rt[0], rt[1], rt[2])
+        if rt[2] > 0: self.addtimer(rt[0], rt[1], rt[2])
         rt[1]() # call after-timer callback
 
     def canceltimer(self, timerid):
@@ -79,7 +79,7 @@ class KnovaTimerInstance:
         self.engine = engine
         self.id = engine.addtimer(delta, cb, period)
 
-    def __delete__(self):
+    def cancel(self):
         engine.canceltimer(self.id)
 
 class KnovaTool:
@@ -100,7 +100,7 @@ class KnovaTool:
             self.lastevent = time.ticks_ms()
             self.lasteventnw = time.time()
         self.web = conf.get("web", False)
-        self.timer = -1 # KnovaTool.lptimer
+        self.timer =  KnovaTool.lptimer
 
         KnovaTool.unitlist[self.name] = self
         
@@ -288,15 +288,19 @@ class KnovaOwBus(KnovaTool):
         for out in self.outs:
             if isinstance(out, KnovaOwThermometer):
                 self.thermo = ds18x20.DS18X20(self.ow)
-                # roms = ds.scan()
                 break
-        # (updateperiod)...
+        if self.thermo is not None:
+            self.roms = ds.scan()
+            self.timer = KnovaTimerInstance(KnovaTool.lptimer,
+                                            self.updateperiod,
+                                            self.periodicupdate,
+                                            self.updateperiod)
 
     def periodicupdate(self):
         if self.thermo is not None:
             self.thermo.convert_temp()
             time.sleep_ms(750)
-        super().propagate(None)
+            super().propagate(None)
 
 
 class KnovaOwThermometer(KnovaTool):
@@ -391,7 +395,7 @@ class KnovaTimedSwitch(KnovaTool):
         self.state[2] = 0 # output by timer off
         self.state[0] = self.defaultstate
         self.state[3] = self.defaultstate
-#        self.timer = KnovaTool.gettimer()
+        self.timer = None
         self.timerincr = 0
 
 
@@ -453,15 +457,14 @@ class KnovaTimedSwitch(KnovaTool):
         # schedule timer after setting the state, to avoid
         # self.timerend being called before end of propagate
         if self.timermode == "restart":
-            
-            KnovaTool.lptimer.canceltimer(self.timer) # self.timer.deinit()
-            self.timer = -1
+            if self.timer is not None: self.timer.cancel()
             self.state[2] = 1
 #            self.timer.init(mode=machine.Timer.ONE_SHOT,
 #                            period=self.timerduration*1000,
 #                            callback=self.timerend)
-            self.timer = KnovaTool.lptimer.addsingletimer(self.timerduration,
-                                                          self.timerend)
+            self.timer = KnovaTtimerInstance(KnovaTool.lptimer,
+                                             self.timerduration,
+                                             self.timerend)
         elif self.timermode == "ignore":
             if self.state[2] == 1:
                 return
@@ -469,20 +472,19 @@ class KnovaTimedSwitch(KnovaTool):
 #            self.timer.init(mode=machine.Timer.ONE_SHOT,
 #                            period=self.timerduration*1000,
 #                            callback=self.timerend)
-            self.timer = KnovaTool.lptimer.addsingletimer(self.timerduration,
-                                                          self.timerend)
+            self.timer = KnovaTtimerInstance(KnovaTool.lptimer,
+                                             self.timerduration,
+                                             self.timerend)
         elif self.timermode == "increment":
-            KnovaTool.lptimer.canceltimer(self.timer) # self.timer.deinit()
-            self.timer = -1
-#            self.timer.deinit()
+            if self.timer is not None: self.timer.cancel()
             self.timerincr +=1
             self.state[2] = 1
 #            self.timer.init(mode=machine.Timer.ONE_SHOT,
 #                            period=self.timerduration*1000*self.timerincr,
 #                            callback=self.timerend)
-            self.timer = KnovaTool.lptimer.addsingletimer(
-                self.timerduration*self.timerincr, self.timerend)
-
+            self.timer = KnovaTtimerInstance(KnovaTool.lptimer,
+                                             self.timerduration*self.timerincr,
+                                             self.timerend)
 
     def timerend(self):
         self.timer = -1
