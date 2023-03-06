@@ -27,6 +27,7 @@ class KnovaLPTimer:
     ptlist = []
     prec = 1
     int timerid = 0
+    int nonetimer = -1
 
     def __init__(self):
         self.rtlist = []
@@ -34,7 +35,8 @@ class KnovaLPTimer:
         self.prec = 1
         int self.timerid = 0
     
-    def addtimer(self, delta, cb, period=0):
+    def addtimer(self, delta, cb=None, period=0):
+        if cb is None: return self.nonetimer
         abstime = time.time() + delta # or we receive abs time?
         n = 0
         for n in range(len(self.rtlist)):
@@ -43,7 +45,7 @@ class KnovaLPTimer:
         self.rtlist.insert(n, (abstime, cb, period, self.timerid))
         ret = self.timerid
         self.timerid += 1
-        if self.timerid == -1: self.timerid += 1
+        if self.timerid == self.nonetimer: self.timerid += 1
         return ret
 
     def addperiodictimer(self, period, cb):
@@ -68,14 +70,14 @@ class KnovaLPTimer:
         rt[1]() # call after-timer callback
 
     def canceltimer(self, timerid):
-        if timerid == -1: return
+        if timerid == self.nonetimer: return
         for n in range(len(self.rtlist)):
             if self.rtlist[n][4] == timerid:
                 del self.rtlist[n]
                 return
 
 class KnovaTimerInstance:
-    def __init__(self, engine, delta, cb, period=0):
+    def __init__(self, engine, delta, cb=None, period=0):
         self.engine = engine
         self.id = engine.addtimer(delta, cb, period)
 
@@ -100,7 +102,8 @@ class KnovaTool:
             self.lastevent = time.ticks_ms()
             self.lasteventnw = time.time()
         self.web = conf.get("web", False)
-        self.timer =  KnovaTool.lptimer
+        self.timer = KnovaTimerInstance(KnovaTool.lptimer, 0)
+        self.updateperiod = conf.get("updateperiod", 0)
 
         KnovaTool.unitlist[self.name] = self
         
@@ -124,10 +127,11 @@ class KnovaTool:
 
     def activate(self):
         # init timers, must be done if overridden
-        self.updateperiod = conf.get("updateperiod", 0)
         if self.updateperiod > 0: # is it acceptable to start timers here?
-            KnovaTool.lptimer.addperiodictimer(self.updateperiod, self.periodicupdate)
-        return
+            self.timer = KnovaTimerInstance(KnovaTool.lptimer,
+                                            self.updateperiod,
+                                            self.periodicupdate,
+                                            self.updateperiod)
 
     def activateall():
         # class method for activating all configured instances
@@ -283,7 +287,6 @@ class KnovaOwBus(KnovaTool):
 
 
     def activate(self):
-        super().activate()
         self.thermo = None
         for out in self.outs:
             if isinstance(out, KnovaOwThermometer):
@@ -291,10 +294,7 @@ class KnovaOwBus(KnovaTool):
                 break
         if self.thermo is not None:
             self.roms = ds.scan()
-            self.timer = KnovaTimerInstance(KnovaTool.lptimer,
-                                            self.updateperiod,
-                                            self.periodicupdate,
-                                            self.updateperiod)
+            super().activate() # schedule timer
 
     def periodicupdate(self):
         if self.thermo is not None:
@@ -395,7 +395,6 @@ class KnovaTimedSwitch(KnovaTool):
         self.state[2] = 0 # output by timer off
         self.state[0] = self.defaultstate
         self.state[3] = self.defaultstate
-        self.timer = None
         self.timerincr = 0
 
 
@@ -457,14 +456,15 @@ class KnovaTimedSwitch(KnovaTool):
         # schedule timer after setting the state, to avoid
         # self.timerend being called before end of propagate
         if self.timermode == "restart":
-            if self.timer is not None: self.timer.cancel()
+#            if self.timer is not None: self.timer.cancel()
+            self.timer.cancel()
             self.state[2] = 1
 #            self.timer.init(mode=machine.Timer.ONE_SHOT,
 #                            period=self.timerduration*1000,
 #                            callback=self.timerend)
-            self.timer = KnovaTtimerInstance(KnovaTool.lptimer,
-                                             self.timerduration,
-                                             self.timerend)
+            self.timer = KnovaTimerInstance(KnovaTool.lptimer,
+                                            self.timerduration,
+                                            self.timerend)
         elif self.timermode == "ignore":
             if self.state[2] == 1:
                 return
@@ -472,19 +472,19 @@ class KnovaTimedSwitch(KnovaTool):
 #            self.timer.init(mode=machine.Timer.ONE_SHOT,
 #                            period=self.timerduration*1000,
 #                            callback=self.timerend)
-            self.timer = KnovaTtimerInstance(KnovaTool.lptimer,
-                                             self.timerduration,
-                                             self.timerend)
+            self.timer = KnovaTimerInstance(KnovaTool.lptimer,
+                                            self.timerduration,
+                                            self.timerend)
         elif self.timermode == "increment":
-            if self.timer is not None: self.timer.cancel()
+            self.timer.cancel()
             self.timerincr +=1
             self.state[2] = 1
 #            self.timer.init(mode=machine.Timer.ONE_SHOT,
 #                            period=self.timerduration*1000*self.timerincr,
 #                            callback=self.timerend)
-            self.timer = KnovaTtimerInstance(KnovaTool.lptimer,
-                                             self.timerduration*self.timerincr,
-                                             self.timerend)
+            self.timer = KnovaTimerInstance(KnovaTool.lptimer,
+                                            self.timerduration*self.timerincr,
+                                            self.timerend)
 
     def timerend(self):
         self.timer = -1
@@ -505,9 +505,7 @@ class KnovaTimedSwitch(KnovaTool):
 #        super().propagate(None)
 
     def timeroff(self):
-        KnovaTool.lptimer.canceltimer(self.timer)
-        self.timer = -1
-#        self.timer.deinit()
+        self.timer.cancel()
         self.timerincr = 0
         self.state[2] = 0
 
@@ -522,7 +520,7 @@ class KnovaOnOffSwitch(KnovaTool):
         self.state[2] = 0 # output by timer off
         self.state[0] = self.defaultstate
         self.state[3] = self.defaultstate
-        self.timer = KnovaTool.gettimer()
+#        self.timer = KnovaTool.gettimer()
 
 
     def connect(self):
@@ -598,18 +596,21 @@ class KnovaOnOffSwitch(KnovaTool):
         super().propagate(None)
         self.state[2] = 1
         # get period from qs
-        self.timer.init(mode=machine.Timer.ONE_SHOT,
-                        period=self.timerduration*1000,
-                        callback=self.ontimerend)
+#        self.timer.init(mode=machine.Timer.ONE_SHOT,
+#                        period=self.timerduration*1000,
+#                        callback=self.ontimerend)
+        self.timer = KnovaTimerInstance(KnovaTool.lptimer,
+                                        self.timerduration,
+                                        self.ontimerend)
         return 0
 
-    def ontimerend(self, timer):
+    def ontimerend(self): #, timer):
         self.state[2] = 0
         if self.state[1] == 0: # auto
             self.state[0] = self.state[3]
         else: # man
             self.state[0] = 0
-        micropython.schedule(self.mptimerend, 0)
+        super().propagate(None) # micropython.schedule(self.mptimerend, 0)
 
     def offtimer(self, req, qs):
         self.timeroff()
@@ -617,9 +618,12 @@ class KnovaOnOffSwitch(KnovaTool):
         super().propagate(None)
         self.state[2] = 1
         # get period from qs
-        self.timer.init(mode=machine.Timer.ONE_SHOT,
-                        period=self.timerduration*1000,
-                        callback=self.offtimerend)
+#        self.timer.init(mode=machine.Timer.ONE_SHOT,
+#                        period=self.timerduration*1000,
+#                        callback=self.offtimerend)
+        self.timer = KnovaTimerInstance(KnovaTool.lptimer,
+                                        self.timerduration,
+                                        self.offtimerend)
         return 0
 
     def offtimerend(self):
@@ -628,10 +632,10 @@ class KnovaOnOffSwitch(KnovaTool):
             self.state[0] = self.state[3]
         else:# man
             self.state[0] = 1
-        micropython.schedule(self.mptimerend, 1)
+        super().propagate(None) # micropython.schedule(self.mptimerend, 1)
 
-    def mptimerend(self, state):
-        super().propagate(None)
+#    def mptimerend(self, state):
+#        super().propagate(None)
 
 
     def timeroff(self):
