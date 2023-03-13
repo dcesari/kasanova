@@ -26,14 +26,14 @@ class KnovaLPTimer:
     rtlist = []
     ptlist = []
     prec = 1
-    int timerid = 0
-    int nonetimer = -1
+    timerid: int = 0
+    nonetimer: int = -1
 
     def __init__(self):
         self.rtlist = []
         self.ptlist = []
         self.prec = 1
-        int self.timerid = 0
+        self.timerid: int = 0
     
     def addtimer(self, delta, cb=None, period=0):
         if cb is None: return self.nonetimer
@@ -54,8 +54,8 @@ class KnovaLPTimer:
 
     def checktimer(self):
         now = time.time()
-        do while (True):
-            if len(self.rtlist) <= 0 return
+        while(True):
+            if len(self.rtlist) <= 0: return
             if abs(self.rtlist[0][0] - now) < self.prec:
                 self.consumetimer()
                 now = time.time() # time may have passed in callback
