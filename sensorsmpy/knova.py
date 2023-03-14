@@ -1,7 +1,8 @@
 #!/usr/bin/micropython
 
 import math
-import micropython
+#import micropython
+import sched as micropython
 import machine
 import time
 
@@ -56,7 +57,7 @@ class KnovaLPTimer:
         now = time.time()
         while(True):
             if len(self.rtlist) <= 0: return
-            if abs(self.rtlist[0][0] - now) < self.prec:
+            if self.rtlist[0][0] - now < self.prec:
                 self.consumetimer()
                 now = time.time() # time may have passed in callback
             else:
@@ -72,7 +73,7 @@ class KnovaLPTimer:
     def canceltimer(self, timerid):
         if timerid == self.nonetimer: return
         for n in range(len(self.rtlist)):
-            if self.rtlist[n][4] == timerid:
+            if self.rtlist[n][3] == timerid:
                 del self.rtlist[n]
                 return
 
@@ -82,7 +83,7 @@ class KnovaTimerInstance:
         self.id = engine.addtimer(delta, cb, period)
 
     def cancel(self):
-        engine.canceltimer(self.id)
+        self.engine.canceltimer(self.id)
 
 class KnovaTool:
     unitlist = {}
@@ -237,6 +238,7 @@ class KnovaOnOffButton(KnovaTool):
         self.pin = machine.Pin(conf["pin"], mode=machine.Pin.IN, pull=machine.Pin.PULL_UP) #...
         self.defaultstate = conf.get("defaultstate", 0)
         self.initdelay = conf.get("initdelay", 0)
+        self.updateperiod = conf.get("updateperiod", 5)
 
         self.state = bytearray(1)
         self.state[0] = self.defaultstate
@@ -250,28 +252,24 @@ class KnovaOnOffButton(KnovaTool):
 
     def activate(self):
         super().activate()
-        if self.invert:
-            self.pin.irq(handler=self.on, trigger=machine.Pin.IRQ_FALLING)
-            #, priority=1, wake=None, hard=False)
-            self.pin.irq(handler=self.off, trigger=machine.Pin.IRQ_RISING)
-        else:
-            self.pin.irq(handler=self.on, trigger=machine.Pin.IRQ_RISING)
-            self.pin.irq(handler=self.off, trigger=machine.Pin.IRQ_FALLING)
-        
+        self.pin.irq(handler=self.onoff,
+                     trigger=machine.Pin.IRQ_RISING | machine.Pin.IRQ_FALLING)
+
 
     def startpropagate(self, state):
-        # self.pin.value() is ignored due to noise filter, trust sign of irq service
+        # here it may be too early to trust pin value
         # schedule a state refresh after self.filterms???
-        self.state[0] = state != self.invert
+        self.state[0] = self.pin.value() != self.invert
         super().propagate(None)
 
-    def on(self, pin):
+
+    def periodicupdate(self):
+        self.startpropagate(1)
+
+
+    def onoff(self, pin):
         if self.noisefilter(): return
         micropython.schedule(self.startpropagate, 1)
-
-    def off(self, pin):
-        if self.noisefilter(): return
-        micropython.schedule(self.startpropagate, 0)
 
 
 class KnovaOwBus(KnovaTool):
@@ -487,7 +485,7 @@ class KnovaTimedSwitch(KnovaTool):
                                             self.timerend)
 
     def timerend(self):
-        self.timer = -1
+        self.timer.cancel()
         self.timerincr = 0
         self.state[0] = 0
         self.state[2] = 0
@@ -689,5 +687,6 @@ if __name__ == '__main__':
 
     KnovaTool.connectall()
     KnovaTool.activateall()
-
-    time.sleep(10000)
+    while(True):
+        time.sleep(2)
+        KnovaTool.lptimer.checktimer()
