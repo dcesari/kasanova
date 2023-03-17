@@ -97,11 +97,15 @@ class KnovaTool:
         self.upstreamconn = conf.get("upstreamconn",[])
         self.ins = []
         self.outs = []
+        # improve management of default values in inheritance
         self.filterms = conf.get("filterms", 400) # >0 to enable debounce filter
         if self.filterms > 0:
             self.filters = math.ceil(self.filterms/1000) # for wrap check
             self.lastevent = time.ticks_ms()
             self.lasteventnw = time.time()
+        self.filterreps = conf.get("filterreps", 300) # >0 to enable anti-repetiotion filter
+        if self.filterreps > 0:
+            self.lastevent = time.time()
         self.web = conf.get("web", False)
         self.timer = KnovaTimerInstance(KnovaTool.lptimer, 0)
         self.updateperiod = conf.get("updateperiod", 0)
@@ -157,6 +161,13 @@ class KnovaTool:
                nownw - self.lasteventnw < self.filters: return True # too early, do nothing
             self.lastevent = now
             self.lasteventnw = nownw
+        return False
+
+    def repetitionfilter(self):
+        if self.filtersrep > 0:
+            now = time.time()
+            if now - self.lastevent < self.filtersrep: return True # too early, do nothing
+            self.lastevent = now
         return False
 
     def getstate(self, req, qs):
@@ -380,7 +391,7 @@ class KnovaToggleSwitch(KnovaTool):
         # if inp.state[0] == 1:
         self.state[3] = 1 - self.state[3]
         self.state[0] = self.state[3]
-        super().propagate(origin)
+        super().propagate(origin) # should it be None or origin?
 
 
 class KnovaTimedSwitch(KnovaTool):
@@ -640,7 +651,65 @@ class KnovaOnOffSwitch(KnovaTool):
         self.timer.deinit()
         self.state[2] = 0
 
- 
+
+class KnovaRegulator(KnovaTool):
+    def __init__(self, conf):
+        super().__init__(conf)
+        self.invert = conf.get("invert", False)
+        self.thresh = conf["thresh"]
+        self.deltaplus = conf.get("deltaplus", 0)
+        self.deltaminus = conf.get("deltaminus", 0)
+        self.initdelay = conf.get("initdelay", 0)
+        self.inputop = conf.get("inputop", "first")
+        self.val = None
+        self.state = bytearray(1)
+        self.state[0] = 2
+        if isinstance(self.thresh, float):
+            self.extr = (-1.e308, 0., 1.e308)
+        else:
+            self.extr = (-65535, 0, 65535)
+
+
+    def connect(self):
+        super().connect() # call base connect method
+        if self.web: # connect to web server
+            KnovaTool.unitlist["web"].register((self.name,"set","thresh"), self.setthresh)
+        # add manual regime
+
+    def propagate(self, origin):
+        if self.inputop == "first":
+            newval = self.ins[0].state[0] # define missing
+        elif self.inputop == "avg":
+            newval = self.extr[1]
+            for inp in self.ins:
+                newval = newval + inp.state[0] # define missing
+            newval = newval/len(self.ins)
+        elif self.inputop == "max":
+            newval = self.extr[0]
+            for inp in self.ins:
+                newval = max(newval, inp.state[0]) # define missing
+        elif self.inputop == "min":
+            newval = self.extr[2]
+            for inp in self.ins:
+                newval = min(newval, inp.state[0]) # define missing
+        if self.val is None: # first time, simplified approach
+            self.val = newval
+            state[0] = int(newval > self.thresh == self.invert)
+            super().propagate(origin)
+        else:
+            self.val = newval # old val not needed actually
+            if self.repetitionfilter(): return
+            if newval > self.thresh - self.deltaminus and \
+               newval < self.thresh + self.deltaplus: # no transition here
+                return
+            newstate = int(
+                ((newval >= self.thresh + self.deltaplus) == self.invert) or
+                ((newval <= self.thresh - self.deltaminus) != self.invert))
+            if newstate != state[0]:
+                state[0] = newstate
+                super().propagate(origin)
+
+
 class KnovaDigitalOut(KnovaTool):
     def __init__(self, conf):
         super().__init__(conf)
