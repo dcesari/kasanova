@@ -15,7 +15,7 @@ html = """<!DOCTYPE html>
 
 htmle = """<!DOCTYPE html>
 <html>
-    <head> <title>ESP32 Pins</title> </head>
+    <head> <title>Knova</title> </head>
     <body> <h1>Error</h1>
         Code %s
     </body>
@@ -45,17 +45,27 @@ class KNovaWebServer:
         self.webhooks.append((req, callback))
 
     def req_decode(self, reqfull):
+        meth = None
         resource = []
         querystring = None
+        querydict = {}
         try:
-            req = str(reqfull).split(" ")[1]
+            meth, req, proto = str(reqfull).split(" ")
             rq = req.split("?")
             resource = rq[0].split("/")
             if len(rq) > 1:
                 querystring = rq[1].split("&")
         except:
             pass
-        return resource, querystring
+        if querystring is not None:
+            for el in querystring:
+                try:
+                    k, v = el.split("=", 1)
+                    querydict[k] = v
+                except:
+                    querydict[el] = None
+
+        return meth, resource, querydict
 
     def http_ready(self):
         cl, addr = self.sock.accept()
@@ -64,7 +74,8 @@ class KNovaWebServer:
         print("request from "+ip)
         cl_file = cl.makefile('rwb', 0)
         req = cl_file.readline(1024)
-        res, qs = self.req_decode(req)
+        meth, res, qs = self.req_decode(req)
+        print(meth)
         print(res)
         print(qs)
         auth = False
@@ -81,20 +92,28 @@ class KNovaWebServer:
             line = cl_file.readline()
             if not line or line == b'\r\n':
                 break
-        if auth:
-            rows = ['<tr><td>%s</td><td>%s</td></tr>' % (str(p), pins[p]) for p in pins]
-            response = html % '\n'.join(rows)
-            htcode = '200'
-        else:
+        if not auth:
             htcode = '400'
-            response = htmle % (htcode,)
+            self.sendhtmlresponse(cl, htcode, htmle % (htcode,))
             print(response)
-        cl.send(b'HTTP/1.0 '+htcode+' OK\r\nContent-type: text/html\r\nConnection: close\r\n\r\n')
-        r = bytes(response,"ascii")
-        print(r)
-        cl.send(r)
-#        cl.send(bytes(response,"ascii"))
-        cl.close()
+            return
+        rows = ['<tr><td>%s</td><td>%s</td></tr>' % (str(p), pins[p]) for p in pins]
+        htcode = '200'
+        self.sendhtmlresponse(cl, htcode, html % '\n'.join(rows))
+        #for h in self.webhooks:
+        #    if req == h[0]:
+        #        h[1]
+        #        return
+
+    def sendhtmlresponse(self, cl, htcode, response):
+        try:
+            cl.send(b'HTTP/1.0 '+htcode+' OK\r\nContent-type: text/html\r\nConnection: close\r\n\r\n')
+            r = bytes(response,"ascii")
+            cl.send(r)
+            # cl.send(bytes(response,"ascii"))
+            cl.close()
+        except:
+            pass
 
     def poll_loop(self):
         ready = self.httpoll.poll(1000)
@@ -106,7 +125,6 @@ class KNovaWebServer:
 
 
 if __name__ == '__main__':
-#    ws = KNovaWebServer({"allowip":('127.0.0.1',)})
     ws = KNovaWebServer({"allowip":'127.0.0.1'})
     ws.connect(None)
     while True:
