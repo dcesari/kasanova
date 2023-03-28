@@ -13,7 +13,7 @@ htmle = """<!DOCTYPE html>
 </html>
 """
 
-class WebServerRequest:
+class KnovaWebRequest:
     def __init__(self, method, resource, querydict, fp):
         self.method = method
         self.resource = resource
@@ -86,7 +86,7 @@ class KNovaWebServer:
         try:
             meth, req, proto = reqfull.decode().split(" ")
             rq = req.split("?")
-            resource = rq[0].lstrip("/").split("/")
+            resource = rq[0].lstrip("/").rstrip("/").split("/")
             if len(rq) > 1:
                 querystring = rq[1].split("&")
         except:
@@ -130,7 +130,7 @@ class KNovaWebServer:
                 postdata = cl_file.read(min(length,2048))
                 qs.update(self.qs_to_dict(postdata))
 
-        request = WebServerRequest(meth, res, qs, cl)
+        request = KnovaWebRequest(meth, res, qs, cl)
         # unauthorised
         if not auth:
             request.senderror(400)
