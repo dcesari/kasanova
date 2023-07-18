@@ -5,6 +5,23 @@ import math
 import sched as micropython
 import machine
 import time
+import ujson
+import network
+import ntptime
+
+
+# tentative main loop, cb must return after a reasonable time
+def KnovaMain(jsonconf, cb):
+    confs = ujson.loads(jsonconf)
+    # json configuration sould be an iterable of single-tool configurations
+    for conf in confs:
+        KnovaDispatcher(conf)
+    KnovaTool.connectall()
+    KnovaTool.activateall()
+    while(True):
+        cb()
+        KnovaTool.lptimer.checktimer()
+
 
 def KnovaDispatcher(conf):
     typ = conf.get("type", "")
@@ -85,6 +102,30 @@ class KnovaTimerInstance:
     def cancel(self):
         self.engine.canceltimer(self.id)
 
+# network tools
+class KnovaNetwork:
+    def __init__(self, conf):
+        self.name = conf["name"]
+        self.typ = conf["type"]
+        self.id = len(KnovaTool.unitlist) # unique progressive id
+#        self.web = conf.get("web", False)
+#        self.timer = KnovaTimerInstance(KnovaTool.lptimer, 0)
+#        self.updateperiod = conf.get("updateperiod", 0)
+        self.ssid = conf["ssid"]
+        self.password = conf["password"]
+        KnovaTool.unitlist[self.name] = self
+
+    def connect(self):
+        self.sta = network.WLAN(network.STA_IF)
+        self.sta.active(True)
+        if not self.sta.isconnected():
+            self.sta.connect(self.ssid, self.password)
+        while not self.sta.isconnected():
+            pass # improve
+#        ntptime.settime()
+
+
+# sensor/buttons tools
 class KnovaTool:
     unitlist = {}
     timercount = 1 # reserve timer n.0 for main loop
@@ -111,7 +152,6 @@ class KnovaTool:
         self.updateperiod = conf.get("updateperiod", 0)
 
         KnovaTool.unitlist[self.name] = self
-        
 
 
     def connect(self):
