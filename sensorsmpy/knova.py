@@ -13,7 +13,7 @@ import ntptime
 # tentative main loop, cb must return after a reasonable time
 def KnovaMain(jsonconf, cb):
     confs = ujson.loads(jsonconf)
-    # json configuration sould be an iterable of single-tool configurations
+    # json configuration should be an iterable of single-tool configurations
     for conf in confs:
         KnovaDispatcher(conf)
     KnovaTool.connectall()
@@ -25,6 +25,8 @@ def KnovaMain(jsonconf, cb):
 
 def KnovaDispatcher(conf):
     typ = conf.get("type", "")
+    if conf["type"] == "wifinetwork":
+        return KnovaWiFiNetwork(conf)
     if conf["type"] == "pushbutton":
         return KnovaPushButton(conf)
     if conf["type"] == "onoffbutton":
@@ -176,33 +178,40 @@ class KnovaTool:
 # network tools
 class KnovaWiFiNetwork(KnovaTool):
     def __init__(self, conf):
+        import network
+        import ntptime
         conf["name"] = "wifinetwork"
         super().__init__(conf)
         self.ssid = conf["ssid"]
         self.password = conf["password"]
         self.updateperiod = conf.get("updateperiod", 0)
         self.blocking = conf.get("blocking", False)
+        self.ntp = conf.get("ntp", False)
+        self.ntphost = conf.get("ntphost", None)
         KnovaTool.unitlist[self.name] = self
         self.nic = network.WLAN(network.STA_IF)
         self.nic.active(True)
+        if self.ntp:
+            if self.ntphost is not None:
+                ntptime.host = ntphost
 
 
     def connect(self):
         if not self.nic.isconnected():
             self.nic.connect(self.ssid, self.password)
-        while not self.nic.isconnected():
-            pass # improve
 #        ntptime.settime()import ntptime
 
 
     def activate(self):
-        # init timers, must be done if overridden
-        if self.updateperiod > 0: # is it acceptable to start timers here?
-            self.timer = KnovaTimerInstance(KnovaTool.lptimer,
-                                            self.updateperiod,
-                                            self.periodicupdate,
-                                            self.updateperiod)
+        super().activate()
+        if self.blocking:
+            while not self.nic.isconnected():
+                time.sleep(1)
+            ntptime.settime()
 
+    def periodicupdate(self): # can i do something to stimulate connection?
+        if self.nic.isconnected() and self.ntp:
+            ntptime.settime()
 
 
 
