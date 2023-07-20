@@ -102,30 +102,7 @@ class KnovaTimerInstance:
     def cancel(self):
         self.engine.canceltimer(self.id)
 
-# network tools
-class KnovaNetwork:
-    def __init__(self, conf):
-        self.name = conf["name"]
-        self.typ = conf["type"]
-        self.id = len(KnovaTool.unitlist) # unique progressive id
-#        self.web = conf.get("web", False)
-#        self.timer = KnovaTimerInstance(KnovaTool.lptimer, 0)
-#        self.updateperiod = conf.get("updateperiod", 0)
-        self.ssid = conf["ssid"]
-        self.password = conf["password"]
-        KnovaTool.unitlist[self.name] = self
-
-    def connect(self):
-        self.sta = network.WLAN(network.STA_IF)
-        self.sta.active(True)
-        if not self.sta.isconnected():
-            self.sta.connect(self.ssid, self.password)
-        while not self.sta.isconnected():
-            pass # improve
-#        ntptime.settime()
-
-
-# sensor/buttons tools
+# generic tool
 class KnovaTool:
     unitlist = {}
     timercount = 1 # reserve timer n.0 for main loop
@@ -134,35 +111,20 @@ class KnovaTool:
     def __init__(self, conf):
         self.name = conf["name"]
         self.typ = conf["type"]
+        if KnovaTool.unitlist.has_key(self.name):
+            raise # duplicated tool
         self.id = len(KnovaTool.unitlist) # unique progressive id
-        self.upstreamconn = conf.get("upstreamconn",[])
-        self.ins = []
-        self.outs = []
+        KnovaTool.unitlist[self.name] = self
         # improve management of default values in inheritance
-        self.filterms = conf.get("filterms", 400) # >0 to enable debounce filter
-        if self.filterms > 0:
-            self.filters = math.ceil(self.filterms/1000) # for wrap check
-            self.lastevent = time.ticks_ms()
-            self.lasteventnw = time.time()
-        self.filterreps = conf.get("filterreps", 300) # >0 to enable anti-repetiotion filter
-        if self.filterreps > 0:
-            self.lastevent = time.time()
         self.web = conf.get("web", False)
         self.timer = KnovaTimerInstance(KnovaTool.lptimer, 0)
         self.updateperiod = conf.get("updateperiod", 0)
 
-        KnovaTool.unitlist[self.name] = self
-
 
     def connect(self):
-        # store upstream unit instances and notify them of the connection
-        for u in self.upstreamconn:
-            self.ins.append(KnovaTool.unitlist[u])
-            KnovaTool.unitlist[u].notifyconnect(self)
+        # do nothing if not overridden
+        return
 
-    def notifyconnect(self, downstream):
-        # store downstream unit instances
-        self.outs.append(downstream)
 
     def connectall():
         # class method for connecting all configured instances
@@ -193,23 +155,6 @@ class KnovaTool:
         return
 
 
-    def noisefilter(self):
-        if self.filterms > 0:
-            now = time.ticks_ms()
-            nownw = time.time() # wrap check
-            if time.ticks_diff(now, self.lastevent) < self.filterms and \
-               nownw - self.lasteventnw < self.filters: return True # too early, do nothing
-            self.lastevent = now
-            self.lasteventnw = nownw
-        return False
-
-    def repetitionfilter(self):
-        if self.filtersrep > 0:
-            now = time.time()
-            if now - self.lastevent < self.filtersrep: return True # too early, do nothing
-            self.lastevent = now
-        return False
-
     def getstate(self, req, qs):
         state = {}
         i = 0
@@ -227,7 +172,101 @@ class KnovaTool:
         KnovaTool.timercount += 1 # check not to exceed (max 3)
         return t
 
-class KnovaPushButton(KnovaTool):
+
+# network tools
+class KnovaWiFiNetwork(KnovaTool):
+    def __init__(self, conf):
+        conf["name"] = "wifinetwork"
+        super().__init__(conf)
+        self.ssid = conf["ssid"]
+        self.password = conf["password"]
+        self.updateperiod = conf.get("updateperiod", 0)
+        self.blocking = conf.get("blocking", False)
+        KnovaTool.unitlist[self.name] = self
+        self.nic = network.WLAN(network.STA_IF)
+        self.nic.active(True)
+
+
+    def connect(self):
+        if not self.nic.isconnected():
+            self.nic.connect(self.ssid, self.password)
+        while not self.nic.isconnected():
+            pass # improve
+#        ntptime.settime()import ntptime
+
+
+    def activate(self):
+        # init timers, must be done if overridden
+        if self.updateperiod > 0: # is it acceptable to start timers here?
+            self.timer = KnovaTimerInstance(KnovaTool.lptimer,
+                                            self.updateperiod,
+                                            self.periodicupdate,
+                                            self.updateperiod)
+
+
+
+
+# sensor/buttons tools
+class KnovaMultiTool(KnovaTool):
+    unitlist = {}
+    timercount = 1 # reserve timer n.0 for main loop
+    lptimer = KnovaLPTimer()
+
+    def __init__(self, conf):
+        super().__init__(conf)
+        self.upstreamconn = conf.get("upstreamconn",[])
+        self.ins = []
+        self.outs = []
+        # improve management of default values in inheritance
+        self.filterms = conf.get("filterms", 400) # >0 to enable debounce filter
+        if self.filterms > 0:
+            self.filters = math.ceil(self.filterms/1000) # for wrap check
+            self.lastevent = time.ticks_ms()
+            self.lasteventnw = time.time()
+        self.filterreps = conf.get("filterreps", 300) # >0 to enable anti-repetiotion filter
+        if self.filterreps > 0:
+            self.lastevent = time.time()
+
+
+    def connect(self):
+        # store upstream unit instances and notify them of the connection
+        for u in self.upstreamconn:
+            self.ins.append(KnovaTool.unitlist[u])
+            KnovaTool.unitlist[u].notifyconnect(self)
+
+    def notifyconnect(self, downstream):
+        # store downstream unit instances
+        self.outs.append(downstream)
+
+
+    def propagate(self, origin):
+        for out in self.outs:
+            out.propagate(self)
+
+    def periodicupdate(self):
+        # do nothing if not overridden
+        return
+
+
+    def noisefilter(self):
+        if self.filterms > 0:
+            now = time.ticks_ms()
+            nownw = time.time() # wrap check
+            if time.ticks_diff(now, self.lastevent) < self.filterms and \
+               nownw - self.lasteventnw < self.filters: return True # too early, do nothing
+            self.lastevent = now
+            self.lasteventnw = nownw
+        return False
+
+    def repetitionfilter(self):
+        if self.filtersrep > 0:
+            now = time.time()
+            if now - self.lastevent < self.filtersrep: return True # too early, do nothing
+            self.lastevent = now
+        return False
+
+
+class KnovaPushButton(KnovaMultiTool):
     def __init__(self, conf):
         super().__init__(conf)
         self.pushtype = conf.get("pushtype", "push") # push or release
@@ -282,7 +321,7 @@ class KnovaPushButton(KnovaTool):
         return 0
 
 
-class KnovaOnOffButton(KnovaTool):
+class KnovaOnOffButton(KnovaMultiTool):
     def __init__(self, conf):
         super().__init__(conf)
         self.invert = conf.get("invert", False)
@@ -323,7 +362,7 @@ class KnovaOnOffButton(KnovaTool):
         micropython.schedule(self.startpropagate, 1)
 
 
-class KnovaOwBus(KnovaTool):
+class KnovaOwBus(KnovaMultiTool):
     def __init__(self, conf):
         super().__init__(conf)
         self.pin = machine.Pin(conf["pin"], mode=machine.Pin.IN, pull=machine.Pin.PULL_UP) #...
@@ -352,7 +391,7 @@ class KnovaOwBus(KnovaTool):
             super().propagate(None)
 
 
-class KnovaOwThermometer(KnovaTool):
+class KnovaOwThermometer(KnovaMultiTool):
     def __init__(self, conf):
         super().__init__(conf)
         self.romid = conf["romid"]
@@ -370,7 +409,7 @@ class KnovaOwThermometer(KnovaTool):
         super().propagate(origin)
 
 
-class KnovaToggleSwitch(KnovaTool):
+class KnovaToggleSwitch(KnovaMultiTool):
     def __init__(self, conf):
         super().__init__(conf)
         self.timerduration = conf.get("timerduration", 60)
@@ -434,7 +473,7 @@ class KnovaToggleSwitch(KnovaTool):
         super().propagate(origin) # should it be None or origin?
 
 
-class KnovaTimedSwitch(KnovaTool):
+class KnovaTimedSwitch(KnovaMultiTool):
     def __init__(self, conf):
         super().__init__(conf)
         self.timerduration = conf.get("timerduration", 60)
@@ -559,7 +598,7 @@ class KnovaTimedSwitch(KnovaTool):
         self.state[2] = 0
 
 
-class KnovaOnOffSwitch(KnovaTool):
+class KnovaOnOffSwitch(KnovaMultiTool):
     def __init__(self, conf):
         super().__init__(conf)
         self.inputop = conf.get("inputop", "or")
@@ -692,7 +731,7 @@ class KnovaOnOffSwitch(KnovaTool):
         self.state[2] = 0
 
 
-class KnovaRegulator(KnovaTool):
+class KnovaRegulator(KnovaMultiTool):
     def __init__(self, conf):
         super().__init__(conf)
         self.invert = conf.get("invert", False)
@@ -750,7 +789,7 @@ class KnovaRegulator(KnovaTool):
                 super().propagate(origin)
 
 
-class KnovaDigitalOut(KnovaTool):
+class KnovaDigitalOut(KnovaMultiTool):
     def __init__(self, conf):
         super().__init__(conf)
         self.invert = conf.get("invert", False)
