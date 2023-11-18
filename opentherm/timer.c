@@ -23,20 +23,22 @@ float stp[2][NSTP] = {
 struct cronoprog {
   unsigned char stpentry;
   unsigned char day[7];
-  unsigned char starth, startm, stoph,stopm;
+  unsigned char starth, startm, stoph, stopm;
 };
 
 struct cronoprog prog[NPROG];
   
 void crono_apply(struct cronoprog prog, int progtyp) {
   int i, j;
-  for(i=0;i<7;i++) {
-    if (prog.day[i]) {
-      for(j=0;j<DAYINT;j++) {
-	if (j*delta >= prog.starth*3600+prog.startm*60 &&
-	    j*delta < prog.stoph*3600+prog.stopm*60) {
-	  cronoarr[i][j] = (cronoarr[i][j] & prog_erase[progtyp]) |
-	    prog.stpentry << prog_shift[progtyp];
+  if (prog.stpentry < NSTP) {
+    for(i=0;i<7;i++) {
+      if (prog.day[i]) {
+	for(j=0;j<DAYINT;j++) {
+	  if (j*delta >= prog.starth*3600+prog.startm*60 &&
+	      j*delta < prog.stoph*3600+prog.stopm*60) {
+	    cronoarr[i][j] = (cronoarr[i][j] & prog_erase[progtyp]) |
+	      prog.stpentry << prog_shift[progtyp];
+	  }
 	}
       }
     }
