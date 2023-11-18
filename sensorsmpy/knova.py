@@ -193,13 +193,12 @@ class KnovaWiFiNetwork(KnovaTool):
         self.nic.active(True)
         if self.ntp:
             if self.ntphost is not None:
-                ntptime.host = ntphost
+                ntptime.host = self.ntphost
 
 
     def connect(self):
         if not self.nic.isconnected():
             self.nic.connect(self.ssid, self.password)
-#        ntptime.settime()import ntptime
 
 
     def activate(self):
@@ -207,12 +206,12 @@ class KnovaWiFiNetwork(KnovaTool):
         if self.blocking:
             while not self.nic.isconnected():
                 time.sleep(1)
-            ntptime.settime()
+            if self.ntp: ntptime.settime()
+
 
     def periodicupdate(self): # can i do something to stimulate connection?
         if self.nic.isconnected() and self.ntp:
             ntptime.settime()
-
 
 
 # sensor/buttons tools
