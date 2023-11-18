@@ -822,27 +822,20 @@ class KnovaDigitalOut(KnovaMultiTool):
         self.pin.value(self.state[0])
 
 
+def trivialcb():
+    time.sleep(2)
+
+
 if __name__ == '__main__':
-    but1 =  KnovaDispatcher({'name':'but1', 'type':'pushbutton','pin':4})
-    but2 =  KnovaDispatcher({'name':'but2', 'type':'pushbutton','pin':5})
-    but3 =  KnovaDispatcher({'name':'but3', 'type':'onoffbutton','pin':19,
-                             'invert':True})
-    sw1 = KnovaTimedSwitch({'name':'sw1', 'type':'timedswitch',
-                             'timerduration':5, 'upstreamconn':['but1']})
-    sw2 = KnovaToggleSwitch({'name':'sw2', 'type':'togglewitch',
-                             'upstreamconn':['but2']})
-    sw3 = KnovaOnOffSwitch({'name':'sw3', 'type':'onoffswitch',
-                             'upstreamconn':['but3']})
-    l1 = KnovaDigitalOut({'name':'l1', 'type':'digitalout','pin':12,
-                          'upstreamconn':['sw1']})
-    l2 = KnovaDigitalOut({'name':'l2', 'type':'digitalout','pin':14,
-                          'upstreamconn':['sw2']})
-    l2 = KnovaDigitalOut({'name':'l3', 'type':'digitalout','pin':27,
-                          'upstreamconn':['sw3']})
-
-
-    KnovaTool.connectall()
-    KnovaTool.activateall()
-    while(True):
-        time.sleep(2)
-        KnovaTool.lptimer.checktimer()
+    conf = """[
+{'name':'but1', 'type':'pushbutton','pin':4},
+{'name':'but2', 'type':'pushbutton','pin':5},
+{'name':'but3', 'type':'onoffbutton','pin':19,'invert':True},
+{'name':'sw1', 'type':'timedswitch','timerduration':5, 'upstreamconn':['but1']},
+{'name':'sw2', 'type':'togglewitch','upstreamconn':['but2']},
+{'name':'sw3', 'type':'onoffswitch','upstreamconn':['but3']},
+{'name':'l1', 'type':'digitalout','pin':12,'upstreamconn':['sw1']},
+{'name':'l2', 'type':'digitalout','pin':14,'upstreamconn':['sw2']},
+{'name':'l3', 'type':'digitalout','pin':27,'upstreamconn':['sw3']}
+]"""
+    KnovaMain(conf, trivialcb)
