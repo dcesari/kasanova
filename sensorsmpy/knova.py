@@ -1,8 +1,8 @@
 #!/usr/bin/micropython
 
 import math
-#import micropython
-import sched as micropython
+import micropython
+#import sched as micropython
 import machine
 import time
 import ujson
@@ -827,15 +827,15 @@ def trivialcb():
 
 
 if __name__ == '__main__':
-    conf = """[
-{'name':'but1', 'type':'pushbutton','pin':4},
-{'name':'but2', 'type':'pushbutton','pin':5},
-{'name':'but3', 'type':'onoffbutton','pin':19,'invert':True},
-{'name':'sw1', 'type':'timedswitch','timerduration':5, 'upstreamconn':['but1']},
-{'name':'sw2', 'type':'togglewitch','upstreamconn':['but2']},
-{'name':'sw3', 'type':'onoffswitch','upstreamconn':['but3']},
-{'name':'l1', 'type':'digitalout','pin':12,'upstreamconn':['sw1']},
-{'name':'l2', 'type':'digitalout','pin':14,'upstreamconn':['sw2']},
-{'name':'l3', 'type':'digitalout','pin':27,'upstreamconn':['sw3']}
-]"""
+    conf = '''[
+{"name":"but1", "type":"pushbutton","pin":4},
+{"name":"but2", "type":"pushbutton","pin":5},
+{"name":"but3", "type":"onoffbutton","pin":19,"invert":true},
+{"name":"sw1", "type":"timedswitch","timerduration":5, "upstreamconn":["but1"]},
+{"name":"sw2", "type":"togglewitch","upstreamconn":["but2"]},
+{"name":"sw3", "type":"onoffswitch","upstreamconn":["but3"]},
+{"name":"l1", "type":"digitalout","pin":12,"upstreamconn":["sw1"]},
+{"name":"l2", "type":"digitalout","pin":14,"upstreamconn":["sw2"]},
+{"name":"l3", "type":"digitalout","pin":27,"upstreamconn":["sw3"]}
+]'''
     KnovaMain(conf, trivialcb)
