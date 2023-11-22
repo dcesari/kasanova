@@ -113,7 +113,7 @@ class KnovaTool:
     def __init__(self, conf):
         self.name = conf["name"]
         self.typ = conf["type"]
-        if KnovaTool.unitlist.has_key(self.name):
+        if self.name in KnovaTool.unitlist:
             raise # duplicated tool
         self.id = len(KnovaTool.unitlist) # unique progressive id
         KnovaTool.unitlist[self.name] = self
