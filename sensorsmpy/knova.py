@@ -215,6 +215,9 @@ class KnovaWiFiNetwork(KnovaTool):
             if self.getconf is not None:
                 # sta_if.config('mac') => b'$\n\xc4\x00\x01\x10' array len=6
                 # sta_if.ifconfig()[0] => '0.0.0.0'
+                r = request("GET", self.getconf, timeout=10000)
+                newconf = r.text
+                r.close()
                 # download conf by http and return it
                 self.getconf = None
                 return newconf
@@ -836,6 +839,10 @@ def trivialcb():
 
 if __name__ == '__main__':
     conf = '''[
+{"type":"wifinetwork", "ssid":"Wokwi-GUEST", "password":"", "getconf":"https://raw.githubusercontent.com/dcesari/kasanova/main/sensorsmpy/testconf.json"}
+]'''
+
+    localconf = '''[
 {"name":"but1", "type":"pushbutton","pin":4},
 {"name":"but2", "type":"pushbutton","pin":5},
 {"name":"but3", "type":"onoffbutton","pin":19,"invert":true},
@@ -846,4 +853,5 @@ if __name__ == '__main__':
 {"name":"l2", "type":"digitalout","pin":14,"upstreamconn":["sw2"]},
 {"name":"l3", "type":"digitalout","pin":27,"upstreamconn":["sw3"]}
 ]'''
+
     KnovaMain(conf, trivialcb)
