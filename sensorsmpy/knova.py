@@ -39,6 +39,7 @@ def KnovaDispatcher(conf):
         return KnovaOnOffSwitch(conf)
     if conf["type"] == "digitalout":
         return KnovaDigitalOut(conf)
+    print("unknown tool type: "+conf["type"])
     return None
 
 
@@ -144,8 +145,11 @@ class KnovaTool:
 
     def activateall():
         # class method for activating all configured instances
+        newconf = None
         for u in KnovaTool.unitlist:
-            KnovaTool.unitlist[u].activate()
+            res = KnovaTool.unitlist[u].activate()
+            if res is not None: newconf = res
+        return newconf
 
 
     def propagate(self, origin):
@@ -188,6 +192,7 @@ class KnovaWiFiNetwork(KnovaTool):
         self.blocking = conf.get("blocking", False)
         self.ntp = conf.get("ntp", False)
         self.ntphost = conf.get("ntphost", None)
+        self.getconf = conf.get("getconf", None)
         KnovaTool.unitlist[self.name] = self
         self.nic = network.WLAN(network.STA_IF)
         self.nic.active(True)
@@ -203,10 +208,16 @@ class KnovaWiFiNetwork(KnovaTool):
 
     def activate(self):
         super().activate()
-        if self.blocking:
+        if self.blocking or self.getconf is not None:
             while not self.nic.isconnected():
                 time.sleep(1)
             if self.ntp: ntptime.settime()
+            if self.getconf is not None:
+                # sta_if.config('mac') => b'$\n\xc4\x00\x01\x10' array len=6
+                # sta_if.ifconfig()[0] => '0.0.0.0'
+                # download conf by http and return it
+                self.getconf = None
+                return newconf
 
 
     def periodicupdate(self): # can i do something to stimulate connection?
@@ -815,9 +826,6 @@ class KnovaDigitalOut(KnovaMultiTool):
 
 
     def propagate(self, origin):
-#        for inp in self.ins:
-#            self.state[0] = inp.state[0] != self.invert
-#            self.pin.value(self.state[0])
         self.state[0] = origin.state[0] != self.invert
         self.pin.value(self.state[0])
 
@@ -832,7 +840,7 @@ if __name__ == '__main__':
 {"name":"but2", "type":"pushbutton","pin":5},
 {"name":"but3", "type":"onoffbutton","pin":19,"invert":true},
 {"name":"sw1", "type":"timedswitch","timerduration":5, "upstreamconn":["but1"]},
-{"name":"sw2", "type":"togglewitch","upstreamconn":["but2"]},
+{"name":"sw2", "type":"toggleswitch","upstreamconn":["but2"]},
 {"name":"sw3", "type":"onoffswitch","upstreamconn":["but3"]},
 {"name":"l1", "type":"digitalout","pin":12,"upstreamconn":["sw1"]},
 {"name":"l2", "type":"digitalout","pin":14,"upstreamconn":["sw2"]},
