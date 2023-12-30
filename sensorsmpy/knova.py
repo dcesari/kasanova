@@ -192,6 +192,7 @@ class KnovaWiFiNetwork(KnovaTool):
         self.blocking = conf.get("blocking", False)
         self.ntp = conf.get("ntp", False)
         self.ntphost = conf.get("ntphost", None)
+        self.ntpready = False
         self.getconf = conf.get("getconf", None)
         KnovaTool.unitlist[self.name] = self
         self.nic = network.WLAN(network.STA_IF)
@@ -208,21 +209,29 @@ class KnovaWiFiNetwork(KnovaTool):
 
     def activate(self):
         super().activate()
-        if self.blocking or self.getconf is not None:
+        if self.blocking or self.getconf is not None or self.ntp:
             while not self.nic.isconnected():
                 time.sleep(1)
-            if self.ntp: ntptime.settime()
+            if self.ntp and not self.ntpready:
+                try:
+                    ntptime.settime()
+                    self.ntpready = True
+                except:
+                    pass
             if self.getconf is not None:
                 import binascii
                 self.getconf.replace("%M", binascii.hexlify(sta_if.config('mac', ':')))
                 self.getconf.replace("%I", sta_if.ifconfig()[0])
                 # sta_if.config('mac') => b'$\n\xc4\x00\x01\x10' array len=6
                 # sta_if.ifconfig()[0] => '0.0.0.0'
-                r = request("GET", self.getconf, timeout=10000)
-                newconf = r.text
-                r.close()
-                # download conf by http and return it
-                self.getconf = None
+                try:
+                    r = request("GET", self.getconf, timeout=10000)
+                    newconf = r.text
+                    r.close()
+                    # download conf by http and return it
+                    self.getconf = None
+                except:
+                    newconf = None
                 return newconf
 
 
