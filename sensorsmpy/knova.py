@@ -213,6 +213,9 @@ class KnovaWiFiNetwork(KnovaTool):
                 time.sleep(1)
             if self.ntp: ntptime.settime()
             if self.getconf is not None:
+                import binascii
+                self.getconf.replace("%M", binascii.hexlify(sta_if.config('mac', ':')))
+                self.getconf.replace("%I", sta_if.ifconfig()[0])
                 # sta_if.config('mac') => b'$\n\xc4\x00\x01\x10' array len=6
                 # sta_if.ifconfig()[0] => '0.0.0.0'
                 r = request("GET", self.getconf, timeout=10000)
