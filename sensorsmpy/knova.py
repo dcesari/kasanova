@@ -14,10 +14,18 @@ import ntptime
 def KnovaMain(jsonconf, cb):
     confs = ujson.loads(jsonconf)
     # json configuration should be an iterable of single-tool configurations
-    for conf in confs:
-        KnovaDispatcher(conf)
-    KnovaTool.connectall()
-    KnovaTool.activateall()
+    while(True):
+        for conf in confs:
+            KnovaDispatcher(conf)
+        KnovaTool.connectall()
+        actres = 0
+        while (type(actres) is int):
+            if actres != 0: time.sleep(10) # wait and repeat download
+            actres = KnovaTool.activateall()
+        if type(actres) is str: # new conf obtained, download it
+            confs = ujson.loads(actres)
+        else:
+            break
     while(True):
         cb()
         KnovaTool.lptimer.checktimer()
