@@ -26,8 +26,8 @@ struct cronoprog {
   unsigned char starth, startm, stoph, stopm;
 };
 
-struct cronoprog prog[NPROG];
-  
+struct cronoprog progbuff[2][NPROG];
+
 void crono_apply(struct cronoprog prog, int progtyp) {
   int i, j;
   if (prog.stpentry < NSTP) {
