@@ -6,11 +6,17 @@
 #include <WebServer.h>
 #include <ESPmDNS.h>
 
+#include <OpenTherm.h>
 
 unsigned long millis();
 float crono_get_stp(int, int, int, int);
 int day, h, m;
 WebServer server(80);
+
+//Master OpenTherm Shield pins configuration
+const int OT_IN_PIN = 21;  //4 for ESP8266 (D2), 21 for ESP32
+const int OT_OUT_PIN = 22; //5 for ESP8266 (D1), 22 for ESP32
+OpenTherm ot(OT_IN_PIN, OT_OUT_PIN);
 
 
 int chust = 0, // 0=off, 1=roomstp, 2=crono, 3=chwstp
@@ -20,7 +26,7 @@ int chuovrrd = 0,
 
 float roomt=20., roomstp=20., chwstp=45., dhwstp=40.; // user values
 int chon=0, dhwon=0;
-float mchwstp, mdhwstp; // machine values
+float mchwstp, mdhwstp, mdhwt; // machine values
 int mchon, mdhwon, flame, fault, faultg, faults;
 
 
@@ -65,6 +71,10 @@ class Thermostat {
     
 Thermostat ch_ts(-1, 0.5, 120);
 
+void handleInterrupt() {
+  ot.handleInterrupt();
+}
+
 void update_machine() {
 
   switch(chust) {
@@ -99,43 +109,58 @@ void update_machine() {
 void setup(void) {
   /*    pinMode(BUILTIN_LED, OUTPUT);
 	digitalWrite(BUILTIN_LED, 0); */
-    Serial.begin(115200);
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(ssid, password);
-    Serial.println("");
+  Serial.begin(115200);
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  Serial.println("");
 
-    // Wait for connection
-    while (WiFi.status() != WL_CONNECTED) {
-      delay(500);
-      Serial.print(".");
-    }
-    Serial.println("");
-    Serial.print("Connected to ");
-    Serial.println(ssid);
-    Serial.print("IP address: ");
-    Serial.println(WiFi.localIP());
+  // Wait for connection
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("");
+  Serial.print("Connected to ");
+  Serial.println(ssid);
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
 
-    /* if (MDNS.begin("thermostat")) {
-       Serial.println("MDNS responder started");
-       } */
+  /* if (MDNS.begin("thermostat")) {
+     Serial.println("MDNS responder started");
+     } */
 
-    server.on("/", handleRoot);
-    server.on("/user/set", HTTP_POST, setuser);
-    server.on("/user/get", HTTP_GET, getuser);
-    server.on("/machine/get", HTTP_GET, getmachine);
-    server.on("/chcron/set", HTTP_POST, setchcron);
-    server.on("/chcron/get", HTTP_GET, getchcron);
-    server.on("/dhwcron/set", HTTP_POST, setdhwcron);
-    server.on("/dhwcron/get", HTTP_GET, getdhwcron);
-    server.on("/test", []() {
-        server.send(200, "text/plain", "this works as well");
-        });
+  server.on("/", handleRoot);
+  server.on("/user/set", HTTP_POST, setuser);
+  server.on("/user/get", HTTP_GET, getuser);
+  server.on("/machine/get", HTTP_GET, getmachine);
+  server.on("/chcron/set", HTTP_POST, setchcron);
+  server.on("/chcron/get", HTTP_GET, getchcron);
+  server.on("/dhwcron/set", HTTP_POST, setdhwcron);
+  server.on("/dhwcron/get", HTTP_GET, getdhwcron);
+  server.on("/test", []() {
+      server.send(200, "text/plain", "this works as well");
+    });
 
-    server.onNotFound(handleNotFound);
+  server.onNotFound(handleNotFound);
 
-    server.begin();
-    Serial.println("HTTP server started");
+  server.begin();
+  Serial.println("HTTP server started");
+  ot.begin(handleInterrupt);
 }
+
+
+void loop(void) {
+  // here do opentherm communication
+  // id 0 send chon dhwon, receive mchon, mdhwon, flame, fault
+  // id 1 send mchwstp
+  // id 56 send mdhwstp
+  // id 26 receive mdhwt ? id 25 boiler flow water t ?
+  // id 19 dhw flow rate ?
+
+  server.handleClient();
+  // handle timers here
+}
+
 
 setuser() {
   int val;
@@ -181,6 +206,7 @@ getmachine() {
   String rep="{";
   rep.concat("mchwstp:"+mchwstp);
   rep.concat(",mdhwstp:"+mdhwstp);
+  rep.concat(",mdhwt:"+mdhwt);
   rep.concat(",mchon:"+mchon);
   rep.concat(",mdhwon:"+mdhwon);
   rep.concat(",flame:"+flame);
