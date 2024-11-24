@@ -137,8 +137,9 @@ void setup(void) {
   server.on("/chcron/get", HTTP_GET, getchcron);
   server.on("/dhwcron/set", HTTP_POST, setdhwcron);
   server.on("/dhwcron/get", HTTP_GET, getdhwcron);
+  server.on("/ot/command", HTTP_GET, otcommand); // POST?
   server.on("/test", []() {
-      server.send(200, "text/plain", "this works as well");
+      server.send(200, "text/plain", "server working");
     });
 
   server.onNotFound(handleNotFound);
@@ -284,4 +285,28 @@ setchron(int typ) {
     progbuff[typ][j].stpentry = 255;
   }
   server.send(200, "text/plain", "OK");
+}
+
+otcommand() {
+  unsigned char id, type;
+  unsigned int data;
+  unsigned long req, resp;
+
+  id = server.arg("id").toInt();
+  if (server.arg("type") == "READ_DATA") {
+    type = ot.READ_DATA;
+  } else if (server.arg("type") == "WRITE_DATA") {
+    type = ot.READ_DATA;
+  } else if (server.arg("type") == "INVALID_DATA") {
+    type = ot.INVALID_DATA;
+  } else if (server.arg("type") == "RESERVED") {
+    type = ot.RESERVED;
+  }
+  req = ot.buidRequest(type, id, data);
+  resp = ot.sendRequest(req);
+
+  String rep="{";
+  rep.concat("response:"+resp+"}");
+  server.send(200, "text/json", rep);
+
 }
