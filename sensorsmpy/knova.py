@@ -173,13 +173,13 @@ class KnovaTool:
         return
 
 
-    def getstate(self, req, qs):
+    def getstate(self, req):
         state = {}
         i = 0
         for n in self.state:
             state[i] = n
             i = i + 1
-        return state
+        req.sendresponse("application/json", ujson.dumps(state))
 
 
     def gettimer():
@@ -250,6 +250,42 @@ class KnovaWiFiNetwork(KnovaTool):
     def periodicupdate(self): # can i do something to stimulate connection?
         if self.nic.isconnected() and self.ntp:
             ntptime.settime()
+
+
+class KnovaWebRequest:
+    def __init__(self, method, resource, querydict, fp):
+        self.method = method
+        self.resource = resource
+        self.querydict = querydict
+        self.fp = fp
+
+
+    def senderror(self, code):
+        htcode = str(code)
+        try:
+            self.fp.send(b'HTTP/1.0 '+htcode+' OK\r\nContent-type: text/html\r\nConnection: close\r\n\r\n')
+            r = bytes(htmle % (htcode,),"ascii")
+            self.fp.send(r)
+            self.fp.close()
+        except:
+            pass
+
+
+    def sendresponse(self, ctype, cbody):
+        try:
+            self.fp.send(b'HTTP/1.0 200 OK\r\nContent-type: '+ctype+'\r\nConnection: close\r\n\r\n')
+            self.fp.send(bytes(cbody, "ascii"))
+            self.fp.close()
+        except:
+            pass
+
+
+    def sendemptyresponse(self): # correct?
+        try:
+            self.fp.send(b'HTTP/1.0 200 OK\r\nConnection: close\r\n\r\n')
+            self.fp.close()
+        except:
+            pass
 
 
 class KNovaWebServer(KnovaTool):
@@ -598,31 +634,32 @@ class KnovaToggleSwitch(KnovaMultiTool):
             self.state[1] = 1 # manual
 
 
-    def setman(self, req, qs):
+    def setman(self, req):
         self.state[1] = 1
-        return 0
+        req.sendemptyresponse()
 
-    def setauto(self, req, qs):
+    def setauto(self, req):
         self.state[1] = 0
         # self.state[0] = self.state[3] # better keep last manual state
         self.state[3] = self.state[0]
         # super().propagate(self) # do not propagate if no change occurs
-        return 0
+        req.sendemptyresponse()
 
-    def onman(self, req, qs):
+    def onman(self, req):
         self.state[0] = 1
         super().propagate(None)
-        return 0
+        req.sendemptyresponse()
 
-    def offman(self, req, qs):
+    def offman(self, req):
         self.state[0] = 0
         super().propagate(None)
-        return 0
+        req.sendemptyresponse()
 
-    def toggleman(self, req, qs):
+    def toggleman(self, req):
         self.state[0] = 1 - self.state[0]
         super().propagate(None)
-        return 0
+        req.sendemptyresponse()
+
 
     def propagate(self, origin):
         if self.state[1] == 1: return # do not update neither propagate in manual state
@@ -663,36 +700,36 @@ class KnovaTimedSwitch(KnovaMultiTool):
             self.state[1] = 1 # manual
             
 
-    def setman(self, req, qs):
+    def setman(self, req):
         self.timeroff()
         self.state[1] = 1
-        return 0
+        req.sendemptyresponse()
 
-    def setauto(self, req, qs):
+    def setauto(self, req):
         self.timeroff()
         self.state[1] = 0
         self.state[3] = self.defaultstate
         self.state[0] = self.defaultstate
         super().propagate(None)
-        return 0
+        req.sendemptyresponse()
 
-    def onman(self, req, qs):
+    def onman(self, req):
         self.timeroff()
         self.state[0] = 1
         super().propagate(None)
-        return 0
+        req.sendemptyresponse()
 
-    def offman(self, req, qs):
+    def offman(self, req):
         self.timeroff()
         self.state[0] = 0
         super().propagate(None)
-        return 0
+        req.sendemptyresponse()
 
-    def toggleman(self, req, qs):
+    def toggleman(self, req):
         self.timeroff()
         self.state[0] = 1 - self.state[0]
         super().propagate(None)
-        return 0
+        req.sendemptyresponse()
 
 
     def propagate(self, origin):
@@ -788,35 +825,35 @@ class KnovaOnOffSwitch(KnovaMultiTool):
             self.state[1] = 1 # manual
             
 
-    def setman(self, req, qs):
+    def setman(self, req):
         self.timeroff()
         self.state[1] = 1
-        return 0
+        req.sendemptyresponse()
 
-    def setauto(self, req, qs):
+    def setauto(self, req):
         self.timeroff()
         self.state[1] = 0
         self.state[0] = self.state[3] # set state to automatic state which was updated in background
         super().propagate(None)
-        return 0
+        req.sendemptyresponse()
 
-    def onman(self, req, qs): # does this make sense without setting state[1] == 1?
+    def onman(self, req): # does this make sense without setting state[1] == 1?
         self.timeroff()
         self.state[0] = 1
         super().propagate(None)
-        return 0
+        req.sendemptyresponse()
 
-    def offman(self, req, qs):
+    def offman(self, req):
         self.timeroff()
         self.state[0] = 0
         super().propagate(None)
-        return 0
+        req.sendemptyresponse()
 
-    def toggleman(self, req, qs):
+    def toggleman(self, req):
         self.timeroff()
         self.state[0] = 1 - self.state[0]
         super().propagate(None)
-        return 0
+        req.sendemptyresponse()
 
 
     def propagate(self, origin):
@@ -837,7 +874,7 @@ class KnovaOnOffSwitch(KnovaMultiTool):
         super().propagate(origin)
 
 
-    def ontimer(self, req, qs):
+    def ontimer(self, req):
         self.timeroff()
         self.state[0] = 1
         super().propagate(None)
@@ -849,7 +886,7 @@ class KnovaOnOffSwitch(KnovaMultiTool):
         self.timer = KnovaTimerInstance(KnovaTool.lptimer,
                                         self.timerduration,
                                         self.ontimerend)
-        return 0
+        req.sendemptyresponse()
 
     def ontimerend(self): #, timer):
         self.state[2] = 0
@@ -859,7 +896,7 @@ class KnovaOnOffSwitch(KnovaMultiTool):
             self.state[0] = 0
         super().propagate(None) # micropython.schedule(self.mptimerend, 0)
 
-    def offtimer(self, req, qs):
+    def offtimer(self, req):
         self.timeroff()
         self.state[0] = 0
         super().propagate(None)
@@ -871,7 +908,7 @@ class KnovaOnOffSwitch(KnovaMultiTool):
         self.timer = KnovaTimerInstance(KnovaTool.lptimer,
                                         self.timerduration,
                                         self.offtimerend)
-        return 0
+        req.sendemptyresponse()
 
     def offtimerend(self):
         self.state[2] = 0
@@ -894,7 +931,11 @@ class KnovaRegulator(KnovaMultiTool):
     def __init__(self, conf):
         super().__init__(conf)
         self.invert = conf.get("invert", False)
-        self.thresh = conf["thresh"]
+        self.ttype = conf.get("ttype", "float")
+        if self.ttype == "int":
+            self.thresh = int(conf["thresh"])
+        else:
+            self.thresh = float(conf["thresh"])
         self.deltaplus = conf.get("deltaplus", 0)
         self.deltaminus = conf.get("deltaminus", 0)
         self.initdelay = conf.get("initdelay", 0)
@@ -912,7 +953,21 @@ class KnovaRegulator(KnovaMultiTool):
         super().connect() # call base connect method
         if self.web: # connect to web server
             KnovaTool.unitlist["web"].register((self.name,"set","thresh"), self.setthresh)
+            KnovaTool.unitlist["web"].register((self.name,"get"), self.getstate)
         # add manual regime
+
+    def setthresh(self, req):
+        try:
+            if isinstance(self.thresh, float): # avoid thresh?
+                thresh = float(req.querydict["value"])
+            else:
+                thresh = int(req.querydict["value"])
+            self.thresh = thresh # plausibility check needed here
+        except:
+            req.senderror(400)
+        else:
+            req.sendemptyresponse()
+
 
     def propagate(self, origin):
         if self.inputop == "first":
