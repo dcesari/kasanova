@@ -940,6 +940,7 @@ class KnovaRegulator(KnovaMultiTool):
         self.deltaminus = conf.get("deltaminus", 0)
         self.initdelay = conf.get("initdelay", 0)
         self.inputop = conf.get("inputop", "first")
+        self.inputind = conf.get("inputind", 0)
         self.val = None
         self.state = bytearray(1)
         self.state[0] = 2
@@ -971,20 +972,23 @@ class KnovaRegulator(KnovaMultiTool):
 
     def propagate(self, origin):
         if self.inputop == "first":
-            newval = self.ins[0].state[0] # define missing
+            newval = self.ins[0].state[self.inputind] # define missing
         elif self.inputop == "avg":
             newval = self.extr[1]
             for inp in self.ins:
-                newval = newval + inp.state[0] # define missing
+                newval = newval + inp.state[self.inputind] # define missing
             newval = newval/len(self.ins)
         elif self.inputop == "max":
             newval = self.extr[0]
             for inp in self.ins:
-                newval = max(newval, inp.state[0]) # define missing
+                newval = max(newval, inp.state[self.inputind]) # define missing
         elif self.inputop == "min":
             newval = self.extr[2]
             for inp in self.ins:
-                newval = min(newval, inp.state[0]) # define missing
+                newval = min(newval, inp.state[self.inputind]) # define missing
+        elif self.inputop == "diff":
+            newval = self.ins[1].state[self.inputind] - \
+                self.ins[0].state[self.inputind ] # define missing
         if self.val is None: # first time, simplified approach
             self.val = newval
             state[0] = int(newval > self.thresh == self.invert)
