@@ -604,6 +604,34 @@ class KnovaOwThermometer(KnovaMultiTool):
         super().propagate(origin)
 
 
+class KnovaDhtThermoHygro(KnovaMultiTool):
+    def __init__(self, conf):
+        super().__init__(conf)
+        self.pin = machine.Pin(conf["pin"], mode=machine.Pin.IN, pull=machine.Pin.PULL_UP) #...
+        self.initdelay = conf.get("initdelay", 0)
+        self.updateperiod = conf.get("updateperiod", 600)
+        self.computeq = conf.get("computeq", False)
+        self.state = array.array("f",(-10000.,-10000.,-10000.))
+
+
+    def activate(self):
+        self.thermo = dht.DHT22(self.pin)
+        super().activate() # schedule timer
+
+
+    def connect(self):
+        super().connect() # call base connect method
+
+
+    def propagate(self, origin):
+        self.thermo.measure()
+        self.state[0] = self.thermo.temperature()
+        self.state[1] = self.thermo.humidity()
+        # if self.computeq: compute q
+        self.lastevent = time.time()
+        super().propagate(origin)
+
+
 class KnovaToggleSwitch(KnovaMultiTool):
     def __init__(self, conf):
         super().__init__(conf)
