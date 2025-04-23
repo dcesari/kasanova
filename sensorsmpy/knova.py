@@ -43,12 +43,20 @@ def KnovaDispatcher(conf):
         return KnovaPushButton(conf)
     if conf["type"] == "onoffbutton":
         return KnovaOnOffButton(conf)
+    if conf["type"] == "owbus":
+        return KnovaOwBus(conf)
+    if conf["type"] == "owthermometer":
+        return KnovaOwThermometer(conf)
+    if conf["type"] == "dhtthermohygro":
+        return KnovaDhtThermoHygro(conf)
     if conf["type"] == "toggleswitch":
         return KnovaToggleSwitch(conf)
     if conf["type"] == "timedswitch":
         return KnovaTimedSwitch(conf)
     if conf["type"] == "onoffswitch":
         return KnovaOnOffSwitch(conf)
+    if conf["type"] == "regulator":
+        return KnovaRegulator(conf);
     if conf["type"] == "digitalout":
         return KnovaDigitalOut(conf)
     print("unknown tool type: "+conf["type"])
