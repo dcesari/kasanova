@@ -76,22 +76,25 @@ class KnovaLPTimer:
         self.prec = 1
         self.timerid: int = 0
     
-    def addtimer(self, delta, cb=None, period=0):
+    def addtimer(self, delta, cb=None, period=0, id=None):
         if cb is None: return self.nonetimer
         abstime = time.time() + delta # or we receive abs time?
         n = 0
         for n in range(len(self.rtlist)):
             if abstime < self.rtlist[n][0]: break
-        # should we conserve timerid for periodic timers?
-        self.rtlist.insert(n, (abstime, cb, period, self.timerid))
-        ret = self.timerid
-        self.timerid += 1
-        if self.timerid == self.nonetimer: self.timerid += 1
+        if id is None:
+            self.rtlist.insert(n, (abstime, cb, period, self.timerid))
+            ret = self.timerid
+            self.timerid += 1
+            if self.timerid == self.nonetimer: self.timerid += 1
+        else: # conserve timerid for periodic timers, trust the caller
+            self.rtlist.insert(n, (abstime, cb, period, id))
+            ret = id
         return ret
 
-    def addperiodictimer(self, period, cb):
-        self.ptlist.append((0, cb, period)) # useful?
-        self.addtimer(period, cb, period)
+#    def addperiodictimer(self, period, cb):
+#        self.ptlist.append((0, cb, period)) # useful?
+#        self.addtimer(period, cb, period)
 
     def checktimer(self):
         now = time.time()
@@ -107,7 +110,7 @@ class KnovaLPTimer:
         rt = self.rtlist[0]
         del self.rtlist[0] # rt is not deleted here (empirically)
         # if periodic, schedule next event
-        if rt[2] > 0: self.addtimer(rt[0], rt[1], rt[2])
+        if rt[2] > 0: self.addtimer(rt[2], rt[1], rt[2])
         rt[1]() # call after-timer callback
 
     def canceltimer(self, timerid):
@@ -232,6 +235,7 @@ class KnovaWiFiNetwork(KnovaTool):
         if self.blocking or self.getconf is not None or self.ntp:
             while not self.nic.isconnected():
                 time.sleep(1)
+            # if self.blocking should repeat indefinitely ntp and getconf
             if self.ntp and not self.ntpready:
                 try:
                     ntptime.settime()
