@@ -572,6 +572,7 @@ class KnovaOnOffButton(KnovaMultiTool):
 class KnovaOwBus(KnovaMultiTool):
     def __init__(self, conf):
         super().__init__(conf)
+        import onewire
         self.pin = machine.Pin(conf["pin"], mode=machine.Pin.IN, pull=machine.Pin.PULL_UP) #...
         self.initdelay = conf.get("initdelay", 0)
         self.updateperiod = conf.get("updateperiod", 600)
@@ -619,6 +620,7 @@ class KnovaOwThermometer(KnovaMultiTool):
 class KnovaDhtThermoHygro(KnovaMultiTool):
     def __init__(self, conf):
         super().__init__(conf)
+        import dht
         self.pin = machine.Pin(conf["pin"], mode=machine.Pin.IN, pull=machine.Pin.PULL_UP) #...
         self.initdelay = conf.get("initdelay", 0)
         self.updateperiod = conf.get("updateperiod", 600)
