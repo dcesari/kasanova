@@ -265,6 +265,15 @@ class KnovaWiFiNetwork(KnovaTool):
 
 
 class KnovaWebRequest:
+    htmle = """<!DOCTYPE html>
+<html>
+    <head> <title>Knova</title> </head>
+    <body> <h1>Error</h1>
+        Code %s
+    </body>
+</html>
+"""
+
     def __init__(self, method, resource, querydict, fp):
         self.method = method
         self.resource = resource
@@ -276,7 +285,7 @@ class KnovaWebRequest:
         htcode = str(code)
         try:
             self.fp.send(b'HTTP/1.0 '+htcode+' OK\r\nContent-type: text/html\r\nConnection: close\r\n\r\n')
-            r = bytes(htmle % (htcode,),"ascii")
+            r = bytes(KnovaWebRequest.htmle % (htcode,),"ascii")
             self.fp.send(r)
             self.fp.close()
         except:
