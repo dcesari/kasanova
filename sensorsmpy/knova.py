@@ -244,8 +244,8 @@ class KnovaWiFiNetwork(KnovaTool):
                     pass
             if self.getconf is not None:
                 import binascii
-                self.getconf.replace("%M", binascii.hexlify(sta_if.config('mac', ':')))
-                self.getconf.replace("%I", sta_if.ifconfig()[0])
+                self.getconf.replace("%M", str(binascii.hexlify(self.nic.config('mac'), ':')))
+#                self.getconf.replace("%I", self.nic.ipconfig()[0]) # ipconfig not defined?
                 # sta_if.config('mac') => b'$\n\xc4\x00\x01\x10' array len=6
                 # sta_if.ifconfig()[0] => '0.0.0.0'
                 try:
