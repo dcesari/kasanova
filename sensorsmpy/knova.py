@@ -311,6 +311,7 @@ class KnovaWebRequest:
 
 class KNovaWebServer(KnovaTool):
     def __init__(self, conf):
+        conf["name"] = "web" # reset name for identification by other tools, unique tool, improve
         super().__init__(conf)
         self.webhooks = []
         self.allowip = conf.get("allowip", None)
