@@ -441,6 +441,7 @@ class KnovaMultiTool(KnovaTool):
             self.lastevent = time.ticks_ms()
             self.lasteventnw = time.time()
         self.filterreps = conf.get("filterreps", 300) # >0 to enable anti-repetiotion filter
+        # possible bug here, i reset lastevent with a different time unit
         if self.filterreps > 0:
             self.lastevent = time.time()
 
@@ -524,18 +525,18 @@ class KnovaPushButton(KnovaMultiTool):
             micropython.schedule(self.startpropagate, 1)
 
 
-    def pushweb(self):
+    def pushweb(self, req):
         if self.state[1] == 1:
             super().propagate(None)
-        return 0
+        req.sendemptyresponse()
 
-    def enable(self):
+    def enable(self, req):
         self.state[1] = 1
-        return 0
+        req.sendemptyresponse()
 
-    def disable(self):
+    def disable(self, req):
         self.state[1] = 0
-        return 0
+        req.sendemptyresponse()
 
 
 class KnovaOnOffButton(KnovaMultiTool):
