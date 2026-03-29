@@ -346,6 +346,15 @@ class KNovaWebServer(KnovaTool):
             pass
         return querydict
 
+    def json_to_dict(self, qs):
+        querydict = {}
+        try:
+            d = ujson.loads(qs)
+            if isinstance(d, dict):
+                querydict = d
+        except:
+            pass
+        return querydict
 
     def req_decode(self, reqfull):
         meth = None
@@ -376,6 +385,7 @@ class KNovaWebServer(KnovaTool):
         meth, res, qs = self.req_decode(req)
         auth = False
         length = None
+        form = 0
         # authorisation
         if self.allowip is not None:
             for i in self.allowip:
@@ -392,13 +402,21 @@ class KNovaWebServer(KnovaTool):
                 k, v = line.rstrip(b"\r\n").split(b" ")
                 if k == b"Content-Length:":
                     length = int(v)
+                elif k == b"Content-Type:":
+                    if v == b"application/x-www-form-urlencoded":
+                        form = 1
+                    elif v == b"application/json":
+                        form = 2
             except:
                 pass
         # read post data
         if meth == "POST":
             if length is not None:
                 postdata = cl_file.read(min(length,2048))
-                qs.update(self.qs_to_dict(postdata))
+                if form == 1:
+                    qs.update(self.qs_to_dict(postdata))
+                if form == 2:
+                    qs.update(self.json_to_dict(postdata))
 
         request = KnovaWebRequest(meth, res, qs, cl)
         # unauthorised
@@ -493,8 +511,8 @@ class KnovaPushButton(KnovaMultiTool):
         self.initdelay = conf.get("initdelay", 0)
 
         self.state = bytearray(2)
-        self.state[0] = 0
-        self.state[1] = 1 # start enabled
+        self.state[0] = 0 # has been pushed once, useless
+        self.state[1] = 1 # enebled/disabled, start enabled
 
 
     def connect(self):
@@ -515,14 +533,14 @@ class KnovaPushButton(KnovaMultiTool):
             self.pin.irq(handler=self.push, trigger=machine.Pin.IRQ_FALLING)
 
 
-    def startpropagate(self, state):
+    def startpropagate(self, value):
         super().propagate(None)
 
     def push(self, pin):
         if self.state[1] == 1:
             self.state[0] = 1 # will never change after first pushrelease?!
             if self.noisefilter(): return
-            micropython.schedule(self.startpropagate, 1)
+            micropython.schedule(self.startpropagate, None)
 
 
     def pushweb(self, req):
@@ -564,7 +582,7 @@ class KnovaOnOffButton(KnovaMultiTool):
                      trigger=machine.Pin.IRQ_RISING | machine.Pin.IRQ_FALLING)
 
 
-    def startpropagate(self, state):
+    def startpropagate(self, value):
         # here it may be too early to trust pin value
         # schedule a state refresh after self.filterms???
         self.state[0] = self.pin.value() != self.invert
@@ -572,12 +590,12 @@ class KnovaOnOffButton(KnovaMultiTool):
 
 
     def periodicupdate(self):
-        self.startpropagate(1)
+        self.startpropagate(None)
 
 
     def onoff(self, pin):
         if self.noisefilter(): return
-        micropython.schedule(self.startpropagate, 1)
+        micropython.schedule(self.startpropagate, None)
 
 
 class KnovaOwBus(KnovaMultiTool):
@@ -620,6 +638,8 @@ class KnovaOwThermometer(KnovaMultiTool):
 
     def connect(self):
         super().connect() # call base connect method
+        if self.web: # connect to web server
+            KnovaTool.unitlist["web"].register((self.name,"get"), self.getstate)
 
 
     def propagate(self, origin):
@@ -646,6 +666,8 @@ class KnovaDhtThermoHygro(KnovaMultiTool):
 
     def connect(self):
         super().connect() # call base connect method
+        if self.web: # connect to web server
+            KnovaTool.unitlist["web"].register((self.name,"get"), self.getstate)
 
 
     def propagate(self, origin):
@@ -671,12 +693,12 @@ class KnovaToggleSwitch(KnovaMultiTool):
     def connect(self):
         super().connect() # call base connect method
         if self.web: # connect to web server
+            KnovaTool.unitlist["web"].register((self.name,"get"), self.getstate)
             KnovaTool.unitlist["web"].register((self.name,"set","on"), self.onman)
 #            KnovaTool.unitlist["web"].register((self.name,"set","ontimer"), self.ontimer)
             KnovaTool.unitlist["web"].register((self.name,"set","off"), self.offman)
 #            KnovaTool.unitlist["web"].register((self.name,"set","offtimer"), self.offtimer)
             KnovaTool.unitlist["web"].register((self.name,"set","toggle"), self.toggleman)
-            KnovaTool.unitlist["web"].register((self.name,"get"), self.getstate)
         if len(self.ins) > 0:
             self.state[1] = 0 # automatic
             if self.web:
@@ -719,7 +741,7 @@ class KnovaToggleSwitch(KnovaMultiTool):
         # if inp.state[0] == 1:
         self.state[3] = 1 - self.state[3]
         self.state[0] = self.state[3]
-        super().propagate(origin) # should it be None or origin?
+        super().propagate(None)
 
 
 class KnovaTimedSwitch(KnovaMultiTool):
@@ -789,7 +811,7 @@ class KnovaTimedSwitch(KnovaMultiTool):
         if self.state[1] == 1: return # do not update neither propagate in manual state
         self.state[3] = 1
         self.state[0] = 1
-        super().propagate(origin)
+        super().propagate(None)
         # schedule timer after setting the state, to avoid
         # self.timerend being called before end of propagate
         if self.timermode == "restart":
