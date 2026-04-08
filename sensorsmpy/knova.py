@@ -45,6 +45,8 @@ def KnovaDispatcher(conf):
         return KnovaOnOffButton(conf)
     if conf["type"] == "owbus":
         return KnovaOwBus(conf)
+    if conf["type"] == "owi2cbus":
+        return KnovaOwI2CBus(conf)
     if conf["type"] == "owthermometer":
         return KnovaOwThermometer(conf)
     if conf["type"] == "dhtthermohygro":
@@ -217,7 +219,6 @@ class KnovaWiFiNetwork(KnovaTool):
         self.ntphost = conf.get("ntphost", None)
         self.ntpready = False
         self.getconf = conf.get("getconf", None)
-        KnovaTool.unitlist[self.name] = self
         self.nic = network.WLAN(network.STA_IF)
         self.nic.active(True)
         if self.ntp:
@@ -329,9 +330,15 @@ class KNovaWebServer(KnovaTool):
 #        print('listening on', addr)
         self.httpoll = select.poll()
         self.httpoll.register(self.sock, select.POLLIN)
+        if self.web: # autoconnect to web server
+            self.register(("machine","reset"), self.resetweb)
 
     def register(self, req, callback):
         self.webhooks.append((req, callback))
+
+    def resetweb(self, req):
+        req.sendemptyresponse()
+        machine.reset()
 
     def qs_to_dict(self, qs):
         querydict = {}
