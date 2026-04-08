@@ -601,7 +601,7 @@ class KnovaOnOffButton(KnovaMultiTool):
 class KnovaOwBus(KnovaMultiTool):
     def __init__(self, conf):
         super().__init__(conf)
-        import onewire
+        import onewire, ds18x20
         self.pin = machine.Pin(conf["pin"], mode=machine.Pin.IN, pull=machine.Pin.PULL_UP) #...
         self.initdelay = conf.get("initdelay", 0)
         self.updateperiod = conf.get("updateperiod", 600)
@@ -613,19 +613,47 @@ class KnovaOwBus(KnovaMultiTool):
 
     def activate(self):
         self.thermo = None
-        for out in self.outs:
+        for out in self.outs: # check that at list one out is a thermometer
             if isinstance(out, KnovaOwThermometer):
                 self.thermo = ds18x20.DS18X20(self.ow)
                 break
         if self.thermo is not None:
             self.roms = ds.scan()
+            print("Found one wire devices", self.roms)
             super().activate() # schedule timer
 
     def periodicupdate(self):
         if self.thermo is not None:
             self.thermo.convert_temp()
-            time.sleep_ms(750)
+            time.sleep_ms(750) # is this really necessary? annoying
             super().propagate(None)
+
+
+class KnovaOwI2CBus(KnovaMultiTool):
+    def __init__(self, conf):
+        super().__init__(conf)
+        import DS248x
+        self.i2c = machine.I2C(0, scl=machine.pin(conf["pin"][0]),
+                               sda=machine.pin(conf["pin"][1]))
+        address = conf.get("address", 24)
+        self.initdelay = conf.get("initdelay", 0)
+        self.updateperiod = conf.get("updateperiod", 600)
+
+        self.ds248x = DS248x(self.i2c, self.address) # create a OneWire bus on I2C
+
+    def activate(self):
+        self.ds248x.onewire_search_reset()
+        self.roms = []
+        while True:
+            rom = bytearray(8) # detach previous instance, forcing a deep copy
+            if self.ds248x.onewire_search(rom):
+                self.roms.append(rom)
+            else:
+                break
+        print("Found one wire on I2C devices", self.roms)
+
+    def periodicupdate(self):
+        super().propagate(None) # is there anything else we should do here?
 
 
 class KnovaOwThermometer(KnovaMultiTool):
@@ -641,9 +669,11 @@ class KnovaOwThermometer(KnovaMultiTool):
         if self.web: # connect to web server
             KnovaTool.unitlist["web"].register((self.name,"get"), self.getstate)
 
-
     def propagate(self, origin):
-        self.state[0] = origin.thermo.read_temp(self.romid)
+        if isinstance(origin, KnovaOwBus):
+            self.state[0] = origin.thermo.read_temp(self.romid)
+        elif isinstance(origin, KnovaOwI2CBus):
+            self.state[0] = origin.ds248x.ds18b20_temperature(self.romid)
         self.lastevent = time.time()
         super().propagate(origin)
 
@@ -658,17 +688,14 @@ class KnovaDhtThermoHygro(KnovaMultiTool):
         self.computeq = conf.get("computeq", False)
         self.state = array.array("f",(-10000.,-10000.,-10000.))
 
-
     def activate(self):
         self.thermo = dht.DHT22(self.pin)
         super().activate() # schedule timer
-
 
     def connect(self):
         super().connect() # call base connect method
         if self.web: # connect to web server
             KnovaTool.unitlist["web"].register((self.name,"get"), self.getstate)
-
 
     def propagate(self, origin):
         self.thermo.measure()
