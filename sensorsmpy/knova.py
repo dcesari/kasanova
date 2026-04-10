@@ -43,6 +43,8 @@ def KnovaDispatcher(conf):
         return KnovaPushButton(conf)
     if conf["type"] == "onoffbutton":
         return KnovaOnOffButton(conf)
+    if conf["type"] == "analoginput":
+        return KnovaAnalogInput(conf)
     if conf["type"] == "owbus":
         return KnovaOwBus(conf)
     if conf["type"] == "owi2cbus":
@@ -256,7 +258,7 @@ class KnovaWiFiNetwork(KnovaTool):
                     # download conf by http and return it
                     self.getconf = None
                 except:
-                    newconf = None
+                    newconf = 1 # check in KnovaMain, was previously None
                 return newconf
 
 
@@ -603,6 +605,38 @@ class KnovaOnOffButton(KnovaMultiTool):
     def onoff(self, pin):
         if self.noisefilter(): return
         micropython.schedule(self.startpropagate, None)
+
+
+class KnovaAnalogInput(KnovaMultiTool):
+    def __init__(self, conf):
+        super().__init__(conf)
+        from machine import ADC
+        self.pin = machine.Pin(conf["pin"], mode=machine.Pin.IN)
+        self.scale = conf.get("scale", 1.0)
+        self.offset = conf.get("offset", 0.0)
+        self.nsamples = conf.get(nsamples, 10)
+        self.scale = self.scale/self.nsamples # avoid division later
+        self.initdelay = conf.get("initdelay", 0)
+        self.updateperiod = conf.get("updateperiod", 600)
+        self.state = array.array("f",(0.0,))
+
+    def activate(self):
+        self.adc = ADC(self.pin, attn=ADC.ATTN_11DB) # ESP32 specific
+        super().activate() # schedule timer
+
+    def connect(self):
+        super().connect() # call base connect method
+        if self.web: # connect to web server
+            KnovaTool.unitlist["web"].register((self.name,"get"), self.getstate)
+
+    def propagate(self, origin):
+        state = 0.0
+        for i in range(self.nsamples):
+            state = state + self.adc.read_u16()
+            time.sleep_ms(10)
+        self.state[0] = state*self.scale + self.offset
+        self.lastevent = time.time()
+        super().propagate(origin)
 
 
 class KnovaOwBus(KnovaMultiTool):
