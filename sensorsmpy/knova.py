@@ -194,6 +194,8 @@ class KnovaTool:
         for n in self.state:
             state[i] = n
             i = i + 1
+        if 'lastevent' in self.__dict__:
+            state["time"] = self.lastevent
         req.sendresponse("application/json", ujson.dumps(state))
 
 
