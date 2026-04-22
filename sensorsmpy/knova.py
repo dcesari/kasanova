@@ -483,7 +483,6 @@ class KnovaMultiTool(KnovaTool):
         # store downstream unit instances
         self.outs.append(downstream)
 
-
     def propagate(self, origin):
         for out in self.outs:
             out.propagate(self)
@@ -542,19 +541,19 @@ class KnovaPushButton(KnovaMultiTool):
             self.pin.irq(handler=self.push, trigger=machine.Pin.IRQ_FALLING)
 
 
-    def startpropagate(self, value):
-        super().propagate(None)
+    def propagate(self, origin):
+        super().propagate(origin)
 
     def push(self, pin):
         if self.state[1] == 1:
             self.state[0] = 1 # will never change after first pushrelease?!
             if self.noisefilter(): return
-            micropython.schedule(self.startpropagate, None)
+            micropython.schedule(self.propagate, None)
 
 
     def pushweb(self, req):
         if self.state[1] == 1:
-            super().propagate(None)
+            self.propagate(None)
         req.sendemptyresponse()
 
     def enable(self, req):
@@ -574,37 +573,31 @@ class KnovaOnOffButton(KnovaMultiTool):
         self.defaultstate = conf.get("defaultstate", 0)
         self.initdelay = conf.get("initdelay", 0)
         self.updateperiod = conf.get("updateperiod", 5)
-
         self.state = bytearray(1)
         self.state[0] = self.defaultstate
-
 
     def connect(self):
         super().connect() # call base connect method
         if self.web: # connect to web server
             KnovaTool.unitlist["web"].register((self.name,"get"), self.getstate)
 
-
     def activate(self):
         super().activate()
         self.pin.irq(handler=self.onoff,
                      trigger=machine.Pin.IRQ_RISING | machine.Pin.IRQ_FALLING)
 
-
-    def startpropagate(self, value):
+    def propagate(self, origin):
         # here it may be too early to trust pin value
         # schedule a state refresh after self.filterms???
         self.state[0] = self.pin.value() != self.invert
-        super().propagate(None)
-
+        super().propagate(origin)
 
     def periodicupdate(self):
-        self.startpropagate(None)
-
+        self.propagate(None)
 
     def onoff(self, pin):
         if self.noisefilter(): return
-        micropython.schedule(self.startpropagate, None)
+        micropython.schedule(self.propagate, None)
 
 
 class KnovaAnalogInput(KnovaMultiTool):
@@ -617,7 +610,7 @@ class KnovaAnalogInput(KnovaMultiTool):
         self.nsamples = conf.get(nsamples, 10)
         self.scale = self.scale/self.nsamples # avoid division later
         self.initdelay = conf.get("initdelay", 0)
-        self.updateperiod = conf.get("updateperiod", 600)
+        self.updateperiod = conf.get("updateperiod", 60)
         self.state = array.array("f",(0.0,))
 
     def activate(self):
@@ -638,6 +631,9 @@ class KnovaAnalogInput(KnovaMultiTool):
         self.lastevent = time.time()
         super().propagate(origin)
 
+    def periodicupdate(self):
+        self.propagate(None)
+
 
 class KnovaOwBus(KnovaMultiTool):
     def __init__(self, conf):
@@ -645,21 +641,20 @@ class KnovaOwBus(KnovaMultiTool):
         import onewire, ds18x20
         self.pin = machine.Pin(conf["pin"], mode=machine.Pin.IN, pull=machine.Pin.PULL_UP) #...
         self.initdelay = conf.get("initdelay", 0)
-        self.updateperiod = conf.get("updateperiod", 600)
+        self.updateperiod = conf.get("updateperiod", 60)
 
         self.ow = onewire.OneWire(self.pin) # create a OneWire bus
         # ow.scan() # return a list of devices on the bus
         self.ow.reset() # reset the bus
 
-
     def activate(self):
         self.thermo = None
-        for out in self.outs: # check that at list one out is a thermometer
+        for out in self.outs: # check that at least one out is a thermometer
             if isinstance(out, KnovaOwThermometer):
                 self.thermo = ds18x20.DS18X20(self.ow)
                 break
         if self.thermo is not None:
-            self.roms = ds.scan()
+            self.roms = self.ow.scan()
             print("Found one wire devices", self.roms)
             super().activate() # schedule timer
 
@@ -678,7 +673,7 @@ class KnovaOwI2CBus(KnovaMultiTool):
                                sda=machine.pin(conf["pin"][1]))
         address = conf.get("address", 24)
         self.initdelay = conf.get("initdelay", 0)
-        self.updateperiod = conf.get("updateperiod", 600)
+        self.updateperiod = conf.get("updateperiod", 60)
 
         self.ds248x = DS248x(self.i2c, self.address) # create a OneWire bus on I2C
 
@@ -725,7 +720,7 @@ class KnovaDhtThermoHygro(KnovaMultiTool):
         import dht
         self.pin = machine.Pin(conf["pin"], mode=machine.Pin.IN, pull=machine.Pin.PULL_UP) #...
         self.initdelay = conf.get("initdelay", 0)
-        self.updateperiod = conf.get("updateperiod", 600)
+        self.updateperiod = conf.get("updateperiod", 60)
         self.computeq = conf.get("computeq", False)
         self.state = array.array("f",(-10000.,-10000.,-10000.))
 
@@ -745,6 +740,9 @@ class KnovaDhtThermoHygro(KnovaMultiTool):
         # if self.computeq: compute q
         self.lastevent = time.time()
         super().propagate(origin)
+
+    def periodicupdate(self):
+        super().propagate(None) # is there anything else we should do here?
 
 
 class KnovaToggleSwitch(KnovaMultiTool):
